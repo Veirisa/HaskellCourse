@@ -3,7 +3,7 @@
 module Block4 where
 
 import           Block3        (Tree (Leaf, Node))
-import           Data.Foldable
+import           Data.Foldable (Foldable)
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -31,19 +31,19 @@ instance Foldable NonEmpty where
 
 instance Foldable Tree where
     foldr :: (a -> b -> b) -> b -> Tree a -> b
-    foldr f z Leaf = z
+    foldr _ z Leaf = z
     foldr f z (Node values left right) =
         foldr f (foldr f (foldr f z right) values) left
 
     foldMap :: Monoid m => (a -> m) -> Tree a -> m
-    foldMap f Leaf = mempty
+    foldMap _ Leaf = mempty
     foldMap f (Node values left right) =
         foldMap f left `mappend` foldMap f values `mappend` foldMap f right
 
 ------------------------------ TASK 2 ------------------------------
 
 splitOn :: Eq a => a -> [a] -> NonEmpty [a]
-splitOn s l = foldr (split s) ([] :| []) l
+splitOn sep l = foldr (split sep) ([] :| []) l
   where
     split :: Eq a => a -> a -> NonEmpty [a] -> NonEmpty [a]
     split s x (acc :| accs) =
@@ -52,7 +52,7 @@ splitOn s l = foldr (split s) ([] :| []) l
         else (x : acc) :| accs
 
 joinWith :: a -> NonEmpty [a] -> [a]
-joinWith s ll = drop 1 (foldl (join s) [] ll)
+joinWith sep ll = drop 1 (foldl (join sep) [] ll)
   where
     join :: a -> [a] -> [a] -> [a]
     join s xl acc = xl ++ (s : acc)

@@ -68,7 +68,7 @@ createCastle city = (city, False)
 createSpecial :: City -> Building -> (City,  Bool)
 createSpecial (City fortress SpecialEmpty houses) building =
     ((City fortress (Special building) houses), True)
-createSpecial city building = (city, False)
+createSpecial city _ = (city, False)
 
 createHouse :: City -> HousePeople -> City
 createHouse (City fortress special (Houses listHouse)) people =
@@ -80,8 +80,8 @@ data LordStatus = Ok | HaveNotCastle | JustHaveLord
 setLord :: City -> Lord -> (City, LordStatus)
 setLord (City (Fortress Castle fortressWalls) special houses) lord =
     (City (Fortress (CastleWithLord lord) fortressWalls) special houses, Ok)
-setLord city@(City FortressEmpty special houses) lord = (city, HaveNotCastle)
-setLord city lord = (city, JustHaveLord)
+setLord city@(City FortressEmpty _ _) _ = (city, HaveNotCastle)
+setLord city _ = (city, JustHaveLord)
 
 createWalls :: City -> (City, Bool)
 createWalls city@(City fortress special houses@(Houses listHouse)) =
@@ -103,9 +103,9 @@ createWalls city@(City fortress special houses@(Houses listHouse)) =
     countPeople acc _                    = acc
 
     doCreateWalls :: Fortress -> (Fortress, Bool)
-    doCreateWalls (Fortress castle@(CastleWithLord lord) FortressWallsEmpty) =
+    doCreateWalls (Fortress castle@(CastleWithLord _) FortressWallsEmpty) =
         (Fortress castle (FortressWalls Walls), True)
-    doCreateWalls fortress = (fortress, False)
+    doCreateWalls oldFortress = (oldFortress, False)
 
 ------------------------------ TASK 3 ------------------------------
 
@@ -165,10 +165,10 @@ divModNat :: Nat -> Nat -> (Nat, Nat)
 divModNat x y = doDivModNat x y Z
   where
     doDivModNat :: Nat -> Nat -> Nat -> (Nat, Nat)
-    doDivModNat x y divAcc
-        | y == Z    = error "div by zero"
-        | x < y     = (divAcc, x)
-        | otherwise = doDivModNat (x - y) y (S divAcc)
+    doDivModNat x1 y1 divAcc
+        | y1 == Z    = error "div by zero"
+        | x1 < y1     = (divAcc, x1)
+        | otherwise = doDivModNat (x1 - y1) y1 (S divAcc)
 
 divNat :: Nat -> Nat -> Nat
 divNat x y = fst (divModNat x y)
@@ -191,8 +191,8 @@ treeSize (Node values left right) =
     NE.length values + treeSize left + treeSize right
 
 treeSearch :: Ord a => Tree a -> a -> Bool
-treeSearch Leaf x = False
-treeSearch (Node values@(val NE.:| vals) left right) x =
+treeSearch Leaf _ = False
+treeSearch (Node (val NE.:| _) left right) x =
     if x == val
     then True
     else
@@ -202,7 +202,7 @@ treeSearch (Node values@(val NE.:| vals) left right) x =
 
 treeInsert :: Ord a => Tree a -> a -> Tree a
 treeInsert Leaf x = Node (x NE.:| []) Leaf Leaf
-treeInsert (Node values@(val NE.:| vals) left right) x =
+treeInsert (Node values@(val NE.:| _) left right) x =
     if x == val
     then Node (NE.cons x values) left right
     else
@@ -211,8 +211,8 @@ treeInsert (Node values@(val NE.:| vals) left right) x =
         else Node values left (treeInsert right x)
 
 treeRemove :: Ord a => Tree a -> a -> Tree a
-treeRemove tree@(Leaf) x = tree
-treeRemove tree@(Node values@(val NE.:| vals) left right) x =
+treeRemove tree@(Leaf) _ = tree
+treeRemove tree@(Node values@(val NE.:| _) left right) x =
     if x == val
     then doTreeRemove tree
     else
@@ -221,22 +221,22 @@ treeRemove tree@(Node values@(val NE.:| vals) left right) x =
         else Node values left (treeRemove right x)
   where
     modifyRight :: Tree a -> (NE.NonEmpty a, Tree a)
-    modifyRight (Node values Leaf right) = (values, right)
-    modifyRight (Node values left right) =
+    modifyRight (Node chValues Leaf chRight) = (chValues, chRight)
+    modifyRight (Node chValues chLeft chRight) =
       let
-        (upperBound, newLeft) = modifyRight left
+        (upperBound, newLeft) = modifyRight chLeft
       in
-        (upperBound, Node values newLeft right)
+        (upperBound, Node chValues newLeft chRight)
 
     doTreeRemove :: Tree a -> Tree a
-    doTreeRemove (Node (v1 NE.:| (v2:vs)) left right) =
-        Node (v2 NE.:| vs) left right
-    doTreeRemove (Node values left Leaf) = left
-    doTreeRemove (Node values left right) =
+    doTreeRemove (Node (_ NE.:| (v2:vs)) curLeft curRight) =
+        Node (v2 NE.:| vs) curLeft curRight
+    doTreeRemove (Node _ curLeft Leaf) = curLeft
+    doTreeRemove (Node _ curLeft curRight) =
       let
-        (upperBound, newRight) = modifyRight right
+        (upperBound, newRight) = modifyRight curRight
       in
-        Node upperBound left newRight
+        Node upperBound curLeft newRight
 
 fromList :: Ord a => [a] -> Tree a
 fromList l = treeFromList Leaf l
@@ -244,8 +244,3 @@ fromList l = treeFromList Leaf l
     treeFromList :: Ord a => Tree a -> [a] -> Tree a
     treeFromList tree (x : xs) = treeFromList (treeInsert tree x) xs
     treeFromList tree _        = tree
-
--- toList :: Tree a -> [a]
--- toList Leaf = []
--- toList (Node values left right) =
---    toList left ++ NE.toList values ++ toList right

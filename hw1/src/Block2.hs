@@ -16,7 +16,7 @@ mergeSort :: Ord a => [a] -> [a]
 mergeSort l = mergeParse (split l)
   where
     split :: [a] -> ([a], [a])
-    split l = let mid = div (length l) 2 in (take mid l, drop mid l)
+    split sl = let mid = div (length sl) 2 in (take mid sl, drop mid sl)
 
     merge :: Ord a => [a] -> [a] -> [a] -> [a]
     merge acc (x : xs) (y : ys) =

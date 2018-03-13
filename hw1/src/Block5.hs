@@ -45,7 +45,7 @@ data Name = Name String | NameEmpty
 instance Semigroup Name where
     (<>) :: Name -> Name -> Name
     Name s1 <> Name s2 = Name (s1 ++ ('.' : s2))
-    n1@(Name s1) <> _  = n1
+    n1@(Name _) <> _  = n1
     _ <> n2            = n2
 
 instance Monoid Name where

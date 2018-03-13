@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-type-defaults #-}
+
 module Main where
 
 import           Block1
@@ -7,7 +9,7 @@ import           Block4
 import           Block5
 import           Data.Foldable
 import           Data.List          (sort)
-import qualified Data.List.NonEmpty as NE (NonEmpty ((:|)), head)
+import qualified Data.List.NonEmpty as NE (NonEmpty ((:|)))
 import           Data.Semigroup     hiding (Endo)
 import           System.Random      (newStdGen, randomRs)
 
@@ -24,27 +26,31 @@ main = putStrLn (test1 ++ ('\n':test2) ++ ('\n':test3) ++ ('\n':test4)
 
 ------------------------------ BLOCK 1 ------------------------------
 
+test1 :: String
 test1 =
     "\n------ Block 1 ------"
     ++ ('\n':test11) ++ ('\n':test12) ++ ('\n':test13) ++ ('\n':test14)
 
+test11 :: String
 test11 =
     "\n1|  order3: "
     ++ verdict (order3 (5, 2, 10) == (2, 5, 10))
 
+test12 :: String
 test12 =
     "\n2|  smartReplicate: "
     ++ verdict (smartReplicate [1,2,3] == [1,2,2,3,3,3])
 
+test13 :: String
 test13 =
     "\n3|  contains: "
     ++ verdict (contains 3 [[1..5], [2,0], [3,4]] == [[1,2,3,4,5],[3,4]])
 
+test14 :: String
 test14 =
     "\n4|  stringSum: "
     ++ verdict (and (map check tests))
   where
-    check test = stringSum (fst test) == snd test
     tests = [("1 1", 2),
              ("100\n\t-3", 97),
              ("1", 1),
@@ -62,31 +68,41 @@ test14 =
              ("\n1\t\n3   555  -1\n\n\n-5", 553),
              ("123\t\n\t\n\t\n321 -4 -40", 400)]
 
+    check :: (String, Int) -> Bool
+    check test = stringSum (fst test) == snd test
+
 ------------------------------ BLOCK 2 ------------------------------
 
+test2 :: String
 test2 =
     "\n------ Block 2 ------"
     ++ ('\n':test21) ++ ('\n':test22)
 
+test21 :: String
 test21 =
     "\n1|  removeFromList: "
     ++ verdict (removeFromList 1 [1, 2, 3] == (2, [1, 3]))
 
+test22 :: String
 test22 =
     "\n2|  mergeSort: "
     ++ verdict (and (map check testsNum ++ map check testsChar))
   where
     testsNum = [[2, 1, 0, 3, 10, 5],
-             [10, (-10), 5, (-5), 0, (-20), (-30), 15, 10]]
+                [10, (-10), 5, (-5), 0, (-20), (-30), 15, 10]]
     testsChar = [['a', 'z', 'x', 'y', 'f', 'z', 'r']]
+
+    check :: Ord a => [a] -> Bool
     check test = sort test == mergeSort test
 
 ------------------------------ BLOCK 3 ------------------------------
 
+test3 :: String
 test3 =
     "\n------ Block 3 ------"
     ++ ('\n':test31) ++ ('\n':test32) ++ ('\n':test33) ++ ('\n':test34)
 
+test31 :: String
 test31 =
     "\n1|  DayOfWeek"
     ++ "\n    nextDay: "
@@ -98,6 +114,7 @@ test31 =
     ++ "\n    daysToParty: "
     ++ verdict (daysToParty Monday == 4 && daysToParty Saturday == 6)
 
+test32 :: String
 test32 =
     "\n2|  City"
     ++ "\n    createCastle: "
@@ -133,6 +150,7 @@ test32 =
     cityCasLordWalls =
         City (Fortress (CastleWithLord Lord) (FortressWalls Walls)) SpecialEmpty houses
 
+test33 :: String
 test33 =
     "\n3|  Nat"
     ++ "\n    toIntegerNat: "
@@ -165,13 +183,23 @@ test33 =
     ++ verdict (checkBinOp modNat 10 5 0 && checkBinOp modNat 9 4 1
                 && checkBinOp modNat 5 10 5 && checkBinOp modNat 0 10 0)
   where
+    checkUnOp :: Num t => (t -> Nat) -> Integer -> Integer -> Bool
     checkUnOp op x res = toIntegerNat (op (fromInteger x)) == res
+
+    checkBinOp :: (Num t1, Num t2) =>
+        (t1 -> t2 -> Nat) -> Integer -> Integer -> Integer -> Bool
     checkBinOp op x y res = toIntegerNat (fromInteger x `op` fromInteger y) == res
+
+    checkEven :: Integer -> Bool -> Bool
     checkEven x res = isEvenNat (fromInteger x) == res
+
+    checkEqual :: Integer -> Integer -> Bool -> Bool
     checkEqual x y res = (fromInteger x == fromInteger y) == res
+
+    checkCompare :: Integer -> Integer -> Ordering -> Bool
     checkCompare x y res = compare (fromInteger x) (fromInteger y) == res
 
-
+test34 :: String
 test34 =
     "\n4|  Tree"
     ++ "\n    treeIsEmpty: "
@@ -215,11 +243,11 @@ test34 =
     checkRemove t exist l = and (map (doCheckRemove t exist) l)
       where
         doCheckRemove :: Ord a => Tree a -> Bool -> a -> Bool
-        doCheckRemove t exist x =
+        doCheckRemove t1 exist1 x =
           let
-            newTree = treeRemove t x
+            newTree = treeRemove t1 x
           in
-            treeSize newTree == treeSize t - 1 && treeSearch newTree x == exist
+            treeSize newTree == treeSize t1 - 1 && treeSearch newTree x == exist1
             && checkInvariant newTree
 
     checkInsert :: Ord a => Tree a -> a -> Bool
@@ -231,22 +259,24 @@ test34 =
         && checkInvariant newTree
 
     checkInvariant :: Ord a => Tree a -> Bool
-    сheckInvariant Leaf = True
-    checkInvariant (Node vs Leaf Leaf) = True
-    checkInvariant (Node (v NE.:|vs) l@(Node (lv NE.:| lvs) ll lr) Leaf) =
-       (v > lv) && checkInvariant l
-    checkInvariant (Node (v NE.:|vs) Leaf r@(Node (rv NE.:| rvs) rl rr)) =
-       (v < rv) && checkInvariant r
-    checkInvariant (Node (v NE.:|vs) l@(Node (lv NE.:| lvs) ll lr)
-                   r@(Node (rv NE.:| rvs) rl rr)) =
-       (v > lv) && (v < rv) && checkInvariant l && checkInvariant r
+    checkInvariant (Node (v NE.:| vs) l@(Node (lv NE.:| _) _ _) Leaf) =
+       (v > lv) && and (map (v ==) vs) && checkInvariant l
+    checkInvariant (Node (v NE.:| vs) Leaf r@(Node (rv NE.:| _) _ _)) =
+       (v < rv) && and (map (v ==) vs) && checkInvariant r
+    checkInvariant (Node (v NE.:| vs) l@(Node (lv NE.:| _) _ _)
+                   r@(Node (rv NE.:| _) _ _)) =
+       (v > lv) && (v < rv) && and (map (v ==) vs)
+       && checkInvariant l && checkInvariant r
+    checkInvariant _ = True
 
 ------------------------------ BLOCK 4 ------------------------------
 
+test4 :: String
 test4 =
     "\n------ Block 4 ------"
     ++ ('\n':test41) ++ ('\n':test42)
 
+test41 :: String
 test41 =
     "\n1|  Foldable"
     ++ "\n    (Pair) foldr: "
@@ -271,6 +301,7 @@ test41 =
     checkFoldMap :: (Eq a, Foldable t1, Foldable t2) => t1 a -> t2 a -> Bool
     checkFoldMap x y = foldMap (\z -> [z]) x == foldMap (\z -> [z]) y
 
+test42 :: String
 test42 =
   "\n2|  splitOn: "
   ++ verdict (splitOn '/' "path/to/file" == ("path" :| ["to", "file"]))
@@ -281,10 +312,12 @@ test42 =
 
 ------------------------------ BLOCK 5 ------------------------------
 
+test5 :: String
 test5 =
     "\n------ Block 5 ------"
     ++ ('\n':test51) ++ ('\n':test52) ++ ('\n':test53)
 
+test51 :: String
 test51 =
     "\n1|  maybeConcat: "
     ++ verdict (maybeConcat [Just [1,2,3], Nothing, Just [4,5]] == [1,2,3,4,5])
@@ -292,6 +325,7 @@ test51 =
     ++ verdict (eitherConcat [Left (Sum 3), Right [1,2,3], Left (Sum 5), Right [4,5]]
                 == (Sum {getSum = 8}, [1,2,3,4,5]))
 
+test52 :: String
 test52 =
     "\n2|  Semigroup, Monoid"
     ++ "\n    (NonEmpty) <>: "
@@ -333,6 +367,7 @@ test52 =
                             && eqSubEndo ((x `mappend` y) `mappend` z)
                                          (x `mappend` (y `mappend` z))
 
+test53 :: String
 test53 =
     "\n3|  Builder"
     ++ "\n    fromString: "
