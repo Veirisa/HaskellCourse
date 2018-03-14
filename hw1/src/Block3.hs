@@ -134,7 +134,7 @@ instance Num Nat where
 
     fromInteger :: Integer -> Nat
     fromInteger x
-        | x < 0    = error "negative number is not a natural number"
+        | x < 0     = error "negative number is not a natural number"
         | x <= 0    = Z
         | otherwise = S (fromInteger (x - 1))
 
@@ -217,7 +217,7 @@ treeRemove tree@(Node values@(val NE.:| _) left right) x
         (upperBound, newLeft) = modifyRight chLeft
       in
         (upperBound, Node chValues newLeft chRight)
-    modifyRight _ = error "Impossible situation"
+    modifyRight _ = error "impossible situation"
 
     doTreeRemove :: Tree a -> Tree a
     doTreeRemove (Node (_ NE.:| (v2:vs)) curLeft curRight) =
@@ -228,7 +228,7 @@ treeRemove tree@(Node values@(val NE.:| _) left right) x
         (upperBound, newRight) = modifyRight curRight
       in
         Node upperBound curLeft newRight
-    doTreeRemove _ = error "Impossible situation"
+    doTreeRemove _ = error "impossible situation"
 
 fromList :: Ord a => [a] -> Tree a
 fromList = treeFromList Leaf
