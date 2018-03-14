@@ -7,7 +7,7 @@ import           Block2
 import           Block3
 import           Block4
 import           Block5
-import           Data.Foldable
+import           Data.Foldable      (Foldable, toList)
 import           Data.List          (sort)
 import qualified Data.List.NonEmpty as NE (NonEmpty ((:|)))
 import           Data.Semigroup     (Semigroup ((<>)), Sum (Sum, getSum))
