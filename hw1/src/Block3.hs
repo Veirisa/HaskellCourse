@@ -134,7 +134,6 @@ instance Num Nat where
 
     fromInteger :: Integer -> Nat
     fromInteger x
-        | x < 0     = error "negative number is not a natural number"
         | x <= 0    = Z
         | otherwise = S (fromInteger (x - 1))
 
