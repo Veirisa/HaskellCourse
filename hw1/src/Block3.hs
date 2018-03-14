@@ -85,7 +85,7 @@ setLord city _ = (city, JustHaveLord)
 
 createWalls :: City -> (City, Bool)
 createWalls city@(City fortress special houses@(Houses listHouse)) =
-    if countPeople 0 (NE.toList listHouse) < 10
+    if sum (map countHousePeople (NE.toList listHouse)) < 10
     then (city, False)
     else
       let
@@ -95,12 +95,11 @@ createWalls city@(City fortress special houses@(Houses listHouse)) =
         then (City newFortress special houses, True)
         else (city, False)
   where
-    countPeople :: Int -> [House] -> Int
-    countPeople acc (House Alone : hs) = countPeople (acc + 1) hs
-    countPeople acc (House Two : hs)   = countPeople (acc + 2) hs
-    countPeople acc (House Three : hs) = countPeople (acc + 3) hs
-    countPeople acc (House Four : hs)  = countPeople (acc + 4) hs
-    countPeople acc _                  = acc
+    countHousePeople :: House -> Int
+    countHousePeople (House Alone) = 1
+    countHousePeople (House Two)   = 2
+    countHousePeople (House Three) = 3
+    countHousePeople (House Four)  = 4
 
     doCreateWalls :: Fortress -> (Fortress, Bool)
     doCreateWalls (Fortress castle@(CastleWithLord _) FortressWallsEmpty) =
