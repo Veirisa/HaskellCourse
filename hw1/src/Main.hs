@@ -81,7 +81,9 @@ test2 =
 test21 :: String
 test21 =
     "\n1|  removeFromList: "
-    ++ verdict (removeFromList 1 [1, 2, 3] == (2, [1, 3]))
+    ++ verdict (removeFromList 1 [1, 2, 3] == (Just 2, [1, 3])
+                && removeFromList 3 [1, 2, 3] == (Nothing, [1, 2, 3])
+                && removeFromList (-1) [1, 2, 3] == (Nothing, [1, 2, 3]))
 
 test22 :: String
 test22 =

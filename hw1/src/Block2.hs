@@ -7,8 +7,11 @@ import           Data.List (length, reverse)
 type Index = Int
 type ListWithoutElement a = [a]
 
-removeFromList :: Index -> [a] -> (a, ListWithoutElement a)
-removeFromList ind l = (l !! ind, take ind l ++ drop (ind + 1) l)
+removeFromList :: Index -> [a] -> (Maybe a, ListWithoutElement a)
+removeFromList ind l
+    | ind < 0 = (Nothing, l)
+    | ind >= length l = (Nothing, l)
+    | otherwise = (Just (l !! ind), take ind l ++ drop (ind + 1) l)
 
 ------------------------------ TASK 2 ------------------------------
 
