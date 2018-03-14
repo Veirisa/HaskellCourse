@@ -10,12 +10,12 @@ order3 (x, y, z) = let [e1, e2, e3] = sort [x, y, z] in (e1, e2, e3)
 ------------------------------ TASK 2 ------------------------------
 
 smartReplicate :: [Int] -> [Int]
-smartReplicate l = concatMap (\x -> replicate x x) l
+smartReplicate = concatMap (\x -> replicate x x)
 
 ------------------------------ TASK 3 ------------------------------
 
 contains :: Eq a => a -> [[a]] -> [[a]]
-contains x l = filter (elem x) l
+contains x = filter (elem x)
 
 ------------------------------ TASK 4 ------------------------------
 

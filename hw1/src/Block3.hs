@@ -62,12 +62,12 @@ data City = City Fortress Special Houses
 
 createCastle :: City -> (City, Bool)
 createCastle (City FortressEmpty special houses) =
-    ((City (Fortress Castle FortressWallsEmpty) special houses), True)
+    (City (Fortress Castle FortressWallsEmpty) special houses, True)
 createCastle city = (city, False)
 
 createSpecial :: City -> Building -> (City,  Bool)
 createSpecial (City fortress SpecialEmpty houses) building =
-    ((City fortress (Special building) houses), True)
+    (City fortress (Special building) houses, True)
 createSpecial city _ = (city, False)
 
 createHouse :: City -> HousePeople -> City
@@ -91,16 +91,16 @@ createWalls city@(City fortress special houses@(Houses listHouse)) =
       let
         (newFortress, wallsCreated) = doCreateWalls fortress
       in
-        if wallsCreated == True
+        if wallsCreated
         then (City newFortress special houses, True)
         else (city, False)
   where
     countPeople :: Int -> [House] -> Int
-    countPeople acc ((House Alone) : hs) = countPeople (acc + 1) hs
-    countPeople acc ((House Two) : hs)   = countPeople (acc + 2) hs
-    countPeople acc ((House Three) : hs) = countPeople (acc + 3) hs
-    countPeople acc ((House Four) : hs)  = countPeople (acc + 4) hs
-    countPeople acc _                    = acc
+    countPeople acc (House Alone : hs) = countPeople (acc + 1) hs
+    countPeople acc (House Two : hs)   = countPeople (acc + 2) hs
+    countPeople acc (House Three : hs) = countPeople (acc + 3) hs
+    countPeople acc (House Four : hs)  = countPeople (acc + 4) hs
+    countPeople acc _                  = acc
 
     doCreateWalls :: Fortress -> (Fortress, Bool)
     doCreateWalls (Fortress castle@(CastleWithLord _) FortressWallsEmpty) =
@@ -192,33 +192,24 @@ treeSize (Node values left right) =
 
 treeSearch :: Ord a => Tree a -> a -> Bool
 treeSearch Leaf _ = False
-treeSearch (Node (val NE.:| _) left right) x =
-    if x == val
-    then True
-    else
-        if x < val
-        then treeSearch left x
-        else treeSearch right x
+treeSearch (Node (val NE.:| _) left right) x
+    | x == val = True
+    | x < val = treeSearch left x
+    | otherwise = treeSearch right x
 
 treeInsert :: Ord a => Tree a -> a -> Tree a
 treeInsert Leaf x = Node (x NE.:| []) Leaf Leaf
-treeInsert (Node values@(val NE.:| _) left right) x =
-    if x == val
-    then Node (NE.cons x values) left right
-    else
-        if x < val
-        then Node values (treeInsert left x) right
-        else Node values left (treeInsert right x)
+treeInsert (Node values@(val NE.:| _) left right) x
+    | x == val = Node (NE.cons x values) left right
+    | x < val = Node values (treeInsert left x) right
+    | otherwise = Node values left (treeInsert right x)
 
 treeRemove :: Ord a => Tree a -> a -> Tree a
-treeRemove tree@(Leaf) _ = tree
-treeRemove tree@(Node values@(val NE.:| _) left right) x =
-    if x == val
-    then doTreeRemove tree
-    else
-        if x < val
-        then Node values (treeRemove left x) right
-        else Node values left (treeRemove right x)
+treeRemove tree@Leaf _ = tree
+treeRemove tree@(Node values@(val NE.:| _) left right) x
+    | x == val = doTreeRemove tree
+    | x < val = Node values (treeRemove left x) right
+    | otherwise = Node values left (treeRemove right x)
   where
     modifyRight :: Tree a -> (NE.NonEmpty a, Tree a)
     modifyRight (Node chValues Leaf chRight) = (chValues, chRight)
@@ -239,7 +230,7 @@ treeRemove tree@(Node values@(val NE.:| _) left right) x =
         Node upperBound curLeft newRight
 
 fromList :: Ord a => [a] -> Tree a
-fromList l = treeFromList Leaf l
+fromList = treeFromList Leaf
   where
     treeFromList :: Ord a => Tree a -> [a] -> Tree a
     treeFromList tree (x : xs) = treeFromList (treeInsert tree x) xs

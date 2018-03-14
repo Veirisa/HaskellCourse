@@ -26,7 +26,7 @@ instance Foldable NonEmpty where
     foldr f z (x :| _)          = f x z
 
     foldMap :: Monoid m => (a -> m) -> NonEmpty a -> m
-    foldMap f (x1 :| (x2 : xs)) = f x1 `mappend` (foldMap f (x2 :| xs))
+    foldMap f (x1 :| (x2 : xs)) = f x1 `mappend` foldMap f (x2 :| xs)
     foldMap f (x :| _)          = f x
 
 instance Foldable Tree where
@@ -43,7 +43,7 @@ instance Foldable Tree where
 ------------------------------ TASK 2 ------------------------------
 
 splitOn :: Eq a => a -> [a] -> NonEmpty [a]
-splitOn sep l = foldr (split sep) ([] :| []) l
+splitOn sep = foldr (split sep) ([] :| [])
   where
     split :: Eq a => a -> a -> NonEmpty [a] -> NonEmpty [a]
     split s x (acc :| accs) =

@@ -49,7 +49,7 @@ test13 =
 test14 :: String
 test14 =
     "\n4|  stringSum: "
-    ++ verdict (and (map check tests))
+    ++ verdict (all check tests)
   where
     tests = [("1 1", 2),
              ("100\n\t-3", 97),
@@ -61,10 +61,10 @@ test14 =
              ("\t12345\t", 12345),
              ("010 020 030", 60),
              (" 123 456 789 ", 1368),
-             ("-1", (-1)),
-             ("-1 -2 -3", (-6)),
-             ("\t-12345\t", (-12345)),
-             (" -123 -456 -789 ", (-1368)),
+             ("-1", -1),
+             ("-1 -2 -3", -6),
+             ("\t-12345\t", -12345),
+             (" -123 -456 -789 ", -1368),
              ("\n1\t\n3   555  -1\n\n\n-5", 553),
              ("123\t\n\t\n\t\n321 -4 -40", 400)]
 
@@ -89,7 +89,7 @@ test22 =
     ++ verdict (and (map check testsNum ++ map check testsChar))
   where
     testsNum = [[2, 1, 0, 3, 10, 5],
-                [10, (-10), 5, (-5), 0, (-20), (-30), 15, 10]]
+                [10, -10, 5, -5, 0, -20, -30, 15, 10]]
     testsChar = [['a', 'z', 'x', 'y', 'f', 'z', 'r']]
 
     check :: Ord a => [a] -> Bool
@@ -156,7 +156,7 @@ test33 =
     ++ "\n    toIntegerNat: "
     ++ verdict (toIntegerNat Z == 0 && toIntegerNat (S (S (S (S (S Z))))) == 5)
     ++ "\n    fromInteger: "
-    ++ verdict (fromInteger 0 == Z && fromInteger 5 == S (S (S (S (S Z)))))
+    ++ verdict (0 == Z && 5 == S (S (S (S (S Z)))))
     ++ "\n    +: "
     ++ verdict (checkBinOp (+) 40 60 100)
     ++ "\n    -: "
@@ -240,7 +240,7 @@ test34 =
                 (Node (4 NE.:| [4, 4, 4]) Leaf Leaf))
 
     checkRemove :: Ord a => Tree a -> Bool -> [a] -> Bool
-    checkRemove t exist l = and (map (doCheckRemove t exist) l)
+    checkRemove t exist = all (doCheckRemove t exist)
       where
         doCheckRemove :: Ord a => Tree a -> Bool -> a -> Bool
         doCheckRemove t1 exist1 x =
@@ -260,12 +260,12 @@ test34 =
 
     checkInvariant :: Ord a => Tree a -> Bool
     checkInvariant (Node (v NE.:| vs) l@(Node (lv NE.:| _) _ _) Leaf) =
-       (v > lv) && and (map (v ==) vs) && checkInvariant l
+       (v > lv) && all (v ==) vs && checkInvariant l
     checkInvariant (Node (v NE.:| vs) Leaf r@(Node (rv NE.:| _) _ _)) =
-       (v < rv) && and (map (v ==) vs) && checkInvariant r
+       (v < rv) && all (v ==) vs && checkInvariant r
     checkInvariant (Node (v NE.:| vs) l@(Node (lv NE.:| _) _ _)
                    r@(Node (rv NE.:| _) _ _)) =
-       (v > lv) && (v < rv) && and (map (v ==) vs)
+       (v > lv) && (v < rv) && all (v ==) vs
        && checkInvariant l && checkInvariant r
     checkInvariant _ = True
 
@@ -299,7 +299,7 @@ test41 =
     checkFoldr x y = foldr (-) 1 x == foldr (-) 1 y
 
     checkFoldMap :: (Eq a, Foldable t1, Foldable t2) => t1 a -> t2 a -> Bool
-    checkFoldMap x y = foldMap (\z -> [z]) x == foldMap (\z -> [z]) y
+    checkFoldMap x y = foldMap (: []) x == foldMap (: []) y
 
 test42 :: String
 test42 =

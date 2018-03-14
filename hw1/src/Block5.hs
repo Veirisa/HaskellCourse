@@ -12,9 +12,9 @@ maybeConcat :: [Maybe [a]] -> [a]
 maybeConcat ll = fromMaybe [] (mconcat ll)
 
 eitherConcat :: (Monoid m1, Monoid m2, Foldable t) => t (Either m1 m2) -> (m1, m2)
-eitherConcat ll = foldr joinMonoids (mempty, mempty) ll
+eitherConcat = foldr joinMonoids (mempty, mempty)
   where
-    joinMonoids :: (Monoid m1, Monoid m2) => (Either m1 m2) -> (m1, m2) -> (m1, m2)
+    joinMonoids :: (Monoid m1, Monoid m2) => Either m1 m2 -> (m1, m2) -> (m1, m2)
     joinMonoids (Left x) (l, r)  = (x `mappend` l, r)
     joinMonoids (Right y) (l, r) = (l, y `mappend` r)
 
@@ -74,7 +74,7 @@ data Builder = One Char | Many [Builder]
     deriving (Show)
 
 fromString :: String -> Builder
-fromString s = Many (map (\x -> One x) s)
+fromString s = Many (map One s)
 
 toString :: Builder -> String
 toString (One c)   = [c]
