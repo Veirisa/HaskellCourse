@@ -10,7 +10,7 @@ import           Block5
 import           Data.Foldable
 import           Data.List          (sort)
 import qualified Data.List.NonEmpty as NE (NonEmpty ((:|)))
-import           Data.Semigroup     hiding (Endo)
+import           Data.Semigroup     (Semigroup ((<>)), Sum (Sum, getSum))
 import           System.Random      (newStdGen, randomRs)
 
 randomIntList :: Int -> Int -> Int -> IO[Int]

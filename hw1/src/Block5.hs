@@ -3,8 +3,8 @@
 module Block5 where
 
 import           Block4         (NonEmpty ((:|)))
-import           Data.Maybe
-import           Data.Semigroup hiding (Endo)
+import           Data.Maybe     (fromMaybe)
+import           Data.Semigroup (Semigroup ((<>)))
 
 ------------------------------ TASK 1 ------------------------------
 
