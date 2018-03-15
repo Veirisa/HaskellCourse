@@ -2,6 +2,7 @@
 
 module Block3 where
 
+import           Data.Foldable      (Foldable)
 import qualified Data.List.NonEmpty as NE (NonEmpty ((:|)), cons, length,
                                            toList)
 
@@ -235,3 +236,16 @@ fromList = treeFromList Leaf
     treeFromList :: Ord a => Tree a -> [a] -> Tree a
     treeFromList tree (x : xs) = treeFromList (treeInsert tree x) xs
     treeFromList tree _        = tree
+
+-------------------- PART TASK 1 FROM BLOCK 4 --------------------
+
+instance Foldable Tree where
+    foldr :: (a -> b -> b) -> b -> Tree a -> b
+    foldr _ z Leaf = z
+    foldr f z (Node values left right) =
+        foldr f (foldr f (foldr f z right) values) left
+
+    foldMap :: Monoid m => (a -> m) -> Tree a -> m
+    foldMap _ Leaf = mempty
+    foldMap f (Node values left right) =
+        foldMap f left `mappend` foldMap f values `mappend` foldMap f right

@@ -2,7 +2,6 @@
 
 module Block5 where
 
-import           Block4         (NonEmpty ((:|)))
 import           Data.Maybe     (fromMaybe)
 import           Data.Semigroup (Semigroup ((<>)))
 
@@ -20,9 +19,7 @@ eitherConcat = foldr joinMonoids (mempty, mempty)
 
 ------------------------------ TASK 2 ------------------------------
 
-instance Semigroup (NonEmpty a) where
-    (<>) :: NonEmpty a -> NonEmpty a -> NonEmpty a
-    (x :| xs) <> (y :| ys) = x :| (xs ++ (y : ys))
+-- instance Semigroup (NonEmpty a) - in Block4
 
 data ThisOrThat a b = This a | That b | Both a b
     deriving (Eq, Show)

@@ -2,8 +2,8 @@
 
 module Block4 where
 
-import           Block3        (Tree (Leaf, Node))
-import           Data.Foldable (Foldable)
+import           Data.Foldable  (Foldable)
+import           Data.Semigroup (Semigroup ((<>)))
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -29,16 +29,7 @@ instance Foldable NonEmpty where
     foldMap f (x1 :| (x2 : xs)) = f x1 `mappend` foldMap f (x2 :| xs)
     foldMap f (x :| _)          = f x
 
-instance Foldable Tree where
-    foldr :: (a -> b -> b) -> b -> Tree a -> b
-    foldr _ z Leaf = z
-    foldr f z (Node values left right) =
-        foldr f (foldr f (foldr f z right) values) left
-
-    foldMap :: Monoid m => (a -> m) -> Tree a -> m
-    foldMap _ Leaf = mempty
-    foldMap f (Node values left right) =
-        foldMap f left `mappend` foldMap f values `mappend` foldMap f right
+-- instance Foldable Tree - in Block3
 
 ------------------------------ TASK 2 ------------------------------
 
@@ -55,4 +46,10 @@ joinWith :: a -> NonEmpty [a] -> [a]
 joinWith sep ll = drop 1 (foldl (join sep) [] ll)
   where
     join :: a -> [a] -> [a] -> [a]
-    join s xl acc = xl ++ (s : acc)
+    join s acc xl = acc ++ (s : xl)
+
+-------------------- PART TASK 2 FROM BLOCK 5 --------------------
+
+instance Semigroup (NonEmpty a) where
+    (<>) :: NonEmpty a -> NonEmpty a -> NonEmpty a
+    (x :| xs) <> (y :| ys) = x :| (xs ++ (y : ys))
