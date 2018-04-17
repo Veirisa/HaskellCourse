@@ -51,8 +51,8 @@ eval (Pow l r) =
 
 ------- Testing (unit):
 
-test11 :: IO ()
-test11 = hspecTestTree11 >>= \unitTests -> defaultMain unitTests
+testUnit11 :: IO ()
+testUnit11 = hspecTestTree11 >>= \unitTests -> defaultMain unitTests
 
 hspecTestTree11 :: IO TestTree
 hspecTestTree11 = testSpec "━━━ Block1 - Task1 ━━━" spec11
@@ -87,11 +87,11 @@ bin n = foldr ($) [[]] (replicate n (>>= \s -> [0 : s, 1 : s]))
 
 ------- Testing (property-based):
 
-test12 :: IO Bool
-test12 =
+testProp12 :: IO Bool
+testProp12 =
   checkParallel $ Group "Block1 - Task2" [
       ("prop_binAmount", prop_binAmount),
-      ("prop_binSeqElements", prop_binSeqElements)
+      ("prop_binElements", prop_binElements)
     ]
 
 genInt :: Gen Int
@@ -101,8 +101,8 @@ prop_binAmount :: Property
 prop_binAmount = property $
     forAll genInt >>= \n -> length (bin n) === (2 ^ n)
 
-prop_binSeqElements :: Property
-prop_binSeqElements = property $
+prop_binElements :: Property
+prop_binElements = property $
     forAll genInt >>= \n -> all (checkSeq n) (bin n) === True
   where
     checkSeq :: Int -> [Int] -> Bool
