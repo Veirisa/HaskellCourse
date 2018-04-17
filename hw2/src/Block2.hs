@@ -1,9 +1,18 @@
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE InstanceSigs      #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Block2 where
 
-import           Control.Monad (liftM2)
-import           Data.Char     (isDigit)
+import           Control.Monad    (liftM2)
+import           Data.Char        (isDigit)
+import           Data.Maybe       (isJust, isNothing)
+
+import           Test.Tasty       (TestTree)
+import           Test.Tasty       (defaultMain, testGroup)
+import           Test.Tasty.Hspec (Spec, describe, it, shouldBe, testSpec)
+
+import           Hedgehog
+import qualified Hedgehog.Gen     as Gen
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -12,13 +21,70 @@ stringSum s = saveSum (map tryRead (words s))
   where
     tryRead :: String -> Maybe Int
     tryRead s@(x : xs) =
-        if (x == '-' || isDigit x) && all isDigit xs
+        if ((x == '-' && not (null xs)) || isDigit x) && all isDigit xs
         then Just (read s)
         else Nothing
     tryRead _ = error "impossible situation"
 
     saveSum :: [Maybe Int] -> Maybe Int
     saveSum a = foldr (liftM2 (+)) (Just 0) a
+
+------- Testing (unit):
+
+testUnit21 :: IO ()
+testUnit21 = hspecTestTree21 >>= \unitTests -> defaultMain unitTests
+
+hspecTestTree21 :: IO TestTree
+hspecTestTree21 = testSpec "━━━ Block2 - Task1 ━━━" spec21
+
+spec21 :: Spec
+spec21 = do
+  describe "stringSum works" $ do
+    it "stringSum on correct inputs" $
+      map stringSum passTests `shouldBe` passAnswers
+    it "stringSum on incorrect inputs" $
+      map stringSum mustFail `shouldBe` mustFailAnswers
+  where
+    passTests = ["1", "1 2 3", " 1", "1 ", "\t1\t", "\t12345\t", "010 020 030",
+                 " 123 456 789 ", "-1", "-1 -2 -3", "\t-12345\t", " -123 -456 -789 ",
+                 "\n1\t\n3   555  -1\n\n\n-5", "123\t\n\t\n\t\n321 -4 -40"]
+    passAnswers = map Just [1, 6, 1, 1, 1, 12345, 60, 1368, -1, -6, -12345,
+                            -1368, 553, 400] :: [Maybe Int]
+    mustFail = ["asd", "1-1", "1.2", "--2", "+1", "1+", "- 2"]
+    mustFailAnswers = replicate 7 Nothing
+
+------- Testing (property-based):
+
+testProp21 :: IO Bool
+testProp21 =
+  checkParallel $ Group "Block2 - Task1" [
+      ("prop_incorrectSymbols", prop_incorrectSymbols),
+      ("prop_minuses", prop_minuses)
+    ]
+
+genIncorrect :: Gen [Char]
+genIncorrect = Gen.shuffle "\n\n\t\t  .0123456789--"
+
+prop_incorrectSymbols :: Property
+prop_incorrectSymbols = property $
+    forAll genIncorrect >>= \s -> stringSum s === Nothing
+
+genCorrect :: Gen [Char]
+genCorrect = Gen.shuffle "\n\n\t\t  0123456789--"
+
+prop_minuses :: Property
+prop_minuses = property $
+    forAll genCorrect >>= \s ->
+        if checkMinuses True s
+        then isJust (stringSum s) === True
+        else isNothing (stringSum s) === True
+  where
+    checkMinuses :: Bool -> String -> Bool
+    checkMinuses wasSpace (x1 : x2 : xs) =
+      ((x1 /= '-') || (wasSpace && isDigit x2)) &&
+      checkMinuses (x1 /= '-' && not (isDigit x1)) (x2 : xs)
+    checkMinuses wasSpace (x : []) = x /= '-'
+    checkMinuses _ _ = True
 
 ------------------------------ TASK 2 ------------------------------
 
