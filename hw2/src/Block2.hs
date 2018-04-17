@@ -121,3 +121,28 @@ instance Foldable Optional where
     foldr :: (a -> b -> b) -> b -> Optional a -> b
     foldr f y (Optional (Just (Just x))) = f x y
     foldr f y _                          = y
+
+-- instance Traversable Optional where
+
+------- Testing (ER):
+
+
+-- 1. return a >>= f ≡ f a (left identity)
+
+-- return a >>= f = Optional (return (return a)) >>= f  (1): return
+--                = Optional (Just (Just a)) >>= f      (2): return (Maybe)
+--                = f a                                 (3): bind - Optional (Just (Just a))
+
+
+-- 2. m >>= return ≡ m (right identity)
+
+-- Optional Nothing >>= return = Optional Nothing                                         (1): bind - Optional Nothing
+
+-- Optional (Just Nothing) >>= return = Optional (Just Nothing)                           (1): bind - Optional (Just Nothing)
+
+-- Optional (Just (Just Nothing)) >>= return = return Nothing                             (1): bind - Optional (Just (Just Nothing))
+--                                           = return Optional (return (return Nothing))  (2): return (Maybe)
+--                                           = return Optional (Just (Just Nothing))      (3): return
+
+
+-- 3. (m >>= f) >>= g ≡ m >>= (\x -> f x >>= g) (associativity)
