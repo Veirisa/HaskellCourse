@@ -13,6 +13,7 @@ import           Test.Tasty.Hspec (Spec, describe, it, shouldBe, testSpec)
 
 import           Hedgehog
 import qualified Hedgehog.Gen     as Gen
+import qualified Hedgehog.Range   as Range
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -87,8 +88,10 @@ prop_minuses = property $
     checkMinuses _ _ = True
 
 ------------------------------ TASK 2 ------------------------------
+-- реализовать Traversable
 
 data Optional a = Optional (Maybe (Maybe a))
+    deriving (Show, Eq)
 
 -- fmap id  ==  id
 -- fmap (f . g)  ==  fmap f . fmap g
@@ -110,39 +113,162 @@ instance Applicative Optional where
 
 instance Monad Optional where
     return :: a -> Optional a
-    return x = Optional (return (return x))
+    return x = Optional (return (return x))                     -- (1)
 
     (>>=) :: Optional a -> (a -> Optional b) -> Optional b
-    Optional (Just (Just x)) >>= f = f x
-    Optional (Just Nothing) >>= _  = Optional (Just Nothing)
-    _ >>= _                        = Optional Nothing
+    Optional (Just (Just x)) >>= f = f x                        -- (2)
+    Optional (Just Nothing) >>= _  = Optional (Just Nothing)    -- (3)
+    _ >>= _                        = Optional Nothing           -- (4)
 
 instance Foldable Optional where
     foldr :: (a -> b -> b) -> b -> Optional a -> b
     foldr f y (Optional (Just (Just x))) = f x y
     foldr f y _                          = y
 
--- instance Traversable Optional where
+instance Traversable Optional where
+    traverse :: Applicative f => (a -> f b) -> Optional a -> f (Optional b)
+    traverse = undefined
 
 ------- Testing (ER):
 
+-- 1. return a >>= f ≡ f a                          - left identity
 
--- 1. return a >>= f ≡ f a (left identity)
-
--- return a >>= f = Optional (return (return a)) >>= f  (1): return
---                = Optional (Just (Just a)) >>= f      (2): return (Maybe)
---                = f a                                 (3): bind - Optional (Just (Just a))
-
-
--- 2. m >>= return ≡ m (right identity)
-
--- Optional Nothing >>= return = Optional Nothing                                         (1): bind - Optional Nothing
-
--- Optional (Just Nothing) >>= return = Optional (Just Nothing)                           (1): bind - Optional (Just Nothing)
-
--- Optional (Just (Just Nothing)) >>= return = return Nothing                             (1): bind - Optional (Just (Just Nothing))
---                                           = return Optional (return (return Nothing))  (2): return (Maybe)
---                                           = return Optional (Just (Just Nothing))      (3): return
+-- return a >>= f
+--     = Optional (return (return a)) >>= f         (1): return
+--     = Optional (Just (Just a)) >>= f             return /Maybe/
+--     = f a                                        (2): bind - Optional (Just (Just a))
 
 
--- 3. (m >>= f) >>= g ≡ m >>= (\x -> f x >>= g) (associativity)
+-- 2. m >>= return ≡ m                              - right identity
+
+-- Optional Nothing >>= return
+--     = Optional Nothing                           (4): bind - Optional Nothing
+
+-- Optional (Just Nothing) >>= return
+--     = Optional (Just Nothing)                    (3): bind - Optional (Just Nothing)
+
+-- Optional (Just (Just a)) >>= return
+--     = return a                                   (2): bind - Optional (Just (Just a))
+--     = Optional (return (return a))               (1): return
+--     = Optional (Just (Just a))                   return /Maybe/
+
+
+-- 3. (m >>= f) >>= g ≡ m >>= (\x -> f x >>= g)     - associativity
+
+-- (Optional Nothing >>= f) >>= g
+--     = Optional Nothing >>= g                     (4): bind - Optional Nothing
+--     = Optional Nothing                           (4): bind - Optional Nothing
+-- Optional Nothing >>= (\x -> f x >>= g)
+--     = Optional Nothing                           (4): bind - Optional Nothing
+
+-- (Optional (Just Nothing) >>= f) >>= g
+--     = Optional (Just Nothing) >>= g              (3): bind - Optional (Just Nothing)
+--     = Optional (Just Nothing)                    (3): bind - Optional (Just Nothing)
+-- Optional (Just Nothing) >>= (\x -> f x >>= g)
+--     = Optional (Just Nothing)                    (3): bind - Optional (Just Nothing)
+
+-- (Optional (Just (Just a)) >>= f) >>= g
+--     = f a >>= g                                  (2): bind - Optional (Just (Just a))
+-- Optional (Just (Just a)) >>= (\x -> f x >>= g)
+--     = (\x -> f x >>= g) a                        (2): bind - Optional (Just (Just a))
+--     = f a >>= g                                  function application
+
+------------------------------ TASK 3 ------------------------------
+-- реализовать Traversable
+
+data NonEmpty a = a :| [a]
+    deriving (Show, Eq)
+
+instance Functor NonEmpty where
+    fmap :: (a -> b) -> NonEmpty a -> NonEmpty b
+    fmap f (x :| xs) = f x :| map f xs
+
+instance Applicative NonEmpty where
+    pure :: a -> NonEmpty a
+    pure x = x :| []
+
+    (<*>) :: NonEmpty (a -> b) -> NonEmpty a -> NonEmpty b
+    (f :| fs) <*> (x :| xs) =
+        f x :| (map f xs ++ [fi xi | fi <- fs, xi <- (x : xs)])
+
+instance Monad NonEmpty where
+    return :: a -> NonEmpty a
+    return x = x :| []
+
+    (>>=) :: NonEmpty a -> (a -> NonEmpty b) -> NonEmpty b
+    (x :| xs) >>= f  = f x `unite` concat (map (toList . f) xs)
+      where
+        toList :: NonEmpty a -> [a]
+        toList (y :| ys) = y : ys
+
+        unite :: NonEmpty a -> [a] -> NonEmpty a
+        unite (y :| ys) l = y :| (ys ++ l)
+
+instance Foldable NonEmpty where
+    foldr :: (a -> b -> b) -> b -> NonEmpty a -> b
+    foldr f z (x1 :| (x2 : xs)) = f x1 (foldr f z (x2 :| xs))
+    foldr f z (x :| _)          = f x z
+
+instance Traversable NonEmpty where
+    traverse :: Applicative f => (a -> f b) -> NonEmpty a -> f (NonEmpty b)
+    traverse = undefined
+
+------- Testing (property-based):
+
+testProp23 :: IO Bool
+testProp23 =
+  checkParallel $ Group "Block2 - Task3" [
+      ("prop_firstMonadLaw ", prop_firstMonadLaw),
+      ("prop_secondMonadLaw", prop_secondMonadLaw),
+      ("prop_thirdMonadLaw", prop_thirdMonadLaw)
+    ]
+
+genInt :: Gen Int
+genInt = Gen.int (Range.linear 0 1000)
+
+genIntList :: Gen [Int]
+genIntList =
+  let
+    listLength = Range.linear 0 1000
+  in
+    Gen.list listLength Gen.enumBounded
+
+genFunc :: Gen (Int -> Int)
+genFunc = Gen.element [(*7), (^2), (+5), negate, signum, abs, id]
+
+combineFuncs :: (Int -> Int) -> (Int -> Int) -> (Int -> NonEmpty Int)
+combineFuncs f1 f2 = combFunc
+  where
+    combFunc :: Int -> NonEmpty Int
+    combFunc x = (f1 . f2) x :| [f1 x, f2 x]
+
+-- 1. return a >>= f ≡ f a                          - left identity
+prop_firstMonadLaw :: Property
+prop_firstMonadLaw = property $
+    forAll genInt >>= \a -> forAll genFunc >>= \f1 -> forAll genFunc >>= \f2 ->
+      let
+        f = combineFuncs f1 f2
+      in
+        (return a >>= f) === f a
+
+-- 2. m >>= return ≡ m                              - right identity
+prop_secondMonadLaw :: Property
+prop_secondMonadLaw = property $
+    forAll genInt >>= \x -> forAll genIntList >>= \xs ->
+      let
+        m = x :| xs
+      in
+        (m >>= return) === m
+
+-- 3. (m >>= f) >>= g ≡ m >>= (\x -> f x >>= g)     - associativity
+prop_thirdMonadLaw :: Property
+prop_thirdMonadLaw = property $
+    forAll genInt >>= \x -> forAll genIntList >>= \xs ->
+    forAll genFunc >>= \f1 -> forAll genFunc >>= \f2 ->
+    forAll genFunc >>= \g1 -> forAll genFunc >>= \g2 ->
+      let
+        m = x :| xs
+        f = combineFuncs f1 f2
+        g = combineFuncs g1 g2
+      in
+        ((m >>= f) >>= g) === (m >>= (\x -> f x >>= g))

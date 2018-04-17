@@ -91,7 +91,7 @@ testProp12 :: IO Bool
 testProp12 =
   checkParallel $ Group "Block1 - Task2" [
       ("prop_binAmount", prop_binAmount),
-      ("prop_binElements", prop_binElements)
+      ("prop_binSeqElements", prop_binSeqElements)
     ]
 
 genInt :: Gen Int
@@ -101,8 +101,8 @@ prop_binAmount :: Property
 prop_binAmount = property $
     forAll genInt >>= \n -> length (bin n) === (2 ^ n)
 
-prop_binElements :: Property
-prop_binElements = property $
+prop_binSeqElements :: Property
+prop_binSeqElements = property $
     forAll genInt >>= \n -> all (checkSeq n) (bin n) === True
   where
     checkSeq :: Int -> [Int] -> Bool
