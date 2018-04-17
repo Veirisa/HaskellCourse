@@ -90,16 +90,27 @@ bin n = foldr ($) [[]] (replicate n (>>= \s -> [0 : s, 1 : s]))
 testProp12 :: IO Bool
 testProp12 =
   checkParallel $ Group "Block1 - Task2" [
-      ("prop_binAmount", prop_binAmount),
+      ("prop_binSequences", prop_binSequences),
       ("prop_binSeqElements", prop_binSeqElements)
     ]
 
 genInt :: Gen Int
 genInt = Gen.int (Range.linear 0 15)
 
-prop_binAmount :: Property
-prop_binAmount = property $
-    forAll genInt >>= \n -> length (bin n) === (2 ^ n)
+genIntInRange :: Int -> Gen Int
+genIntInRange n = Gen.int (Range.linear 0 n)
+
+genRandSeq :: Int -> Int -> Gen [Int]
+genRandSeq n x = Gen.shuffle (replicate x 0 ++ replicate (n - x) 1)
+
+prop_binSequences :: Property
+prop_binSequences = property $
+    forAll genInt >>= \n -> forAll (genIntInRange n) >>= \x ->
+    forAll (genRandSeq n x) >>= \s ->
+      let
+        bl = bin n
+      in
+        (length bl, elem s bl) === (2 ^ n, True)
 
 prop_binSeqElements :: Property
 prop_binSeqElements = property $

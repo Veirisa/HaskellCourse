@@ -1,7 +1,7 @@
 module Main where
 
 import           Block1 (testProp12, testUnit11)
-import           Block2 (testProp21, testUnit21)
+import           Block2 (testProp21, testProp23, testUnit21)
 
 main :: IO ()
 main = putStrLn ("\n--------------- hw2 ---------------"  ++

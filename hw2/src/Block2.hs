@@ -218,9 +218,9 @@ instance Traversable NonEmpty where
 testProp23 :: IO Bool
 testProp23 =
   checkParallel $ Group "Block2 - Task3" [
-      ("prop_firstMonadLaw ", prop_firstMonadLaw),
-      ("prop_secondMonadLaw", prop_secondMonadLaw),
-      ("prop_thirdMonadLaw", prop_thirdMonadLaw)
+      ("prop_monadNonEmptyFirstLaw", prop_monadNonEmptyFirstLaw),
+      ("prop_monadNonEmptySecondLaw", prop_monadNonEmptySecondLaw),
+      ("prop_monadNonEmptyThirdLaw", prop_monadNonEmptyThirdLaw)
     ]
 
 genInt :: Gen Int
@@ -243,8 +243,8 @@ combineFuncs f1 f2 = combFunc
     combFunc x = (f1 . f2) x :| [f1 x, f2 x]
 
 -- 1. return a >>= f ≡ f a                          - left identity
-prop_firstMonadLaw :: Property
-prop_firstMonadLaw = property $
+prop_monadNonEmptyFirstLaw :: Property
+prop_monadNonEmptyFirstLaw = property $
     forAll genInt >>= \a -> forAll genFunc >>= \f1 -> forAll genFunc >>= \f2 ->
       let
         f = combineFuncs f1 f2
@@ -252,8 +252,8 @@ prop_firstMonadLaw = property $
         (return a >>= f) === f a
 
 -- 2. m >>= return ≡ m                              - right identity
-prop_secondMonadLaw :: Property
-prop_secondMonadLaw = property $
+prop_monadNonEmptySecondLaw :: Property
+prop_monadNonEmptySecondLaw = property $
     forAll genInt >>= \x -> forAll genIntList >>= \xs ->
       let
         m = x :| xs
@@ -261,8 +261,8 @@ prop_secondMonadLaw = property $
         (m >>= return) === m
 
 -- 3. (m >>= f) >>= g ≡ m >>= (\x -> f x >>= g)     - associativity
-prop_thirdMonadLaw :: Property
-prop_thirdMonadLaw = property $
+prop_monadNonEmptyThirdLaw :: Property
+prop_monadNonEmptyThirdLaw = property $
     forAll genInt >>= \x -> forAll genIntList >>= \xs ->
     forAll genFunc >>= \f1 -> forAll genFunc >>= \f2 ->
     forAll genFunc >>= \g1 -> forAll genFunc >>= \g2 ->
