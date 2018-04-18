@@ -398,5 +398,3 @@ test53 =
     oneBuild = One 'a'
     manyOneBuild = Many [One 'b', One 'c']
     manyMultiBuild = Many [Many [One 'd'], One 'e']
-
-generateAll = [a^p | a <- [1..1000000000], p <- [1..60], a^p <= 1000000000000000000]
