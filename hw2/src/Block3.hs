@@ -2,8 +2,8 @@
 
 module Block3 where
 
-import           Control.Applicative
-import           Data.Char           (isDigit)
+import           Control.Applicative (Alternative, empty, (<|>))
+import           Data.Char           (isDigit, isSpace)
 import           Data.Maybe          (isJust, isNothing)
 
 import           Test.Tasty          (TestTree)
@@ -135,14 +135,14 @@ getInt = fmap read correctInt
     digit = satisfy isDigit
 
     number :: Parser Char String
-    number = fmap (:) (digit) <*> (number <|> (eof *> pure ""))
+    number = fmap (:) (digit) <*> (number <|> (ok *> pure ""))
 
     correctInt :: Parser Char String
     correctInt =
       let
         joinNotPlus x = if x == '+' then id else (x:)
       in
-        fmap joinNotPlus (element '-' <|> element '+' <|> digit) <*> number
+        (fmap joinNotPlus (element '-' <|> element '+') <*> number) <|> number
 
 ------- Testing (unit):
 
@@ -178,10 +178,25 @@ spec33 = do
       runParser getInt "-9" `shouldBe` Just(-9, "")
 
 ------------------------------ TASK 4 ------------------------------
--- Реализовать getNumList
+-- getIntLists должен работать без , в начале
 
 getIntLists :: Parser Char [[Int]]
-getIntLists = undefined
+getIntLists =
+    (fmap (:) getIntList <*> getIntLists) <|> (skipSpaces *> eof *> pure [])
+
+getIntList :: Parser Char [Int]
+getIntList = (skipSpacesAndComma *> getInt <* ok) >>= (\n -> getSomeInts n)
+
+getSomeInts :: Int -> Parser Char [Int]
+getSomeInts 0 = pure []
+getSomeInts n =
+  (fmap (:) (skipSpacesAndComma *> getInt <* ok)) <*> (getSomeInts (n - 1))
+
+skipSpacesAndComma :: Parser Char ()
+skipSpacesAndComma = skipSpaces *> element ',' *> skipSpaces *> ok
+
+skipSpaces :: Parser Char ()
+skipSpaces = (element ' ' *> skipSpaces) <|> ok
 
 ------- Testing (unit):
 
@@ -197,12 +212,12 @@ spec34 = do
     it "getIntLists on \"\"" $
       runParser getIntLists "" `shouldBe` Just([], "")
     it "getIntLists on \"2,  -1, a\"" $
-      runParser getIntLists "2,  -1, a" `shouldSatisfy` isNothing
+      runParser getIntLists ",2,  -1, a" `shouldSatisfy` isNothing
     it "getIntLists on \"1,1-\"" $
-      runParser getIntLists "1,1-" `shouldSatisfy` isNothing
+      runParser getIntLists ",1,1-" `shouldSatisfy` isNothing
     it "getIntLists on \"4,2,   -5,  +1,  9 \"" $
-      runParser getIntLists "4,2,   -5,  +1,  9 "
+      runParser getIntLists ",4,2,   -5,  +1,  9 "
       `shouldBe` Just([[2, -5, 1, 9]], "")
     it "getIntLists on \"2, 1,+10  , 3,5,-7, 2\"" $
-      runParser getIntLists "2, 1,+10  , 3,5,-7, 2"
+      runParser getIntLists ",2, 1,+10  , 3,5,-7, 2"
       `shouldBe` Just([[1, 10], [5, -7, 2]], "")
