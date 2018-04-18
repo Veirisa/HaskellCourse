@@ -171,32 +171,37 @@ spec33 = do
     it "getInt on \"0123\"" $
       runParser getInt "0123" `shouldBe` Just(123, "")
     it "getInt on \"45.6\"" $
-      runParser getInt "45.6" `shouldSatisfy` isNothing
-    it "getInt on \"7-8\"" $
-      runParser getInt "7-8" `shouldSatisfy` isNothing
+      runParser getInt "45.6" `shouldBe` Just(45, ".6")
+    it "getInt on \"--78\"" $
+      runParser getInt "--78" `shouldSatisfy` isNothing
     it "getInt on \"-9\"" $
       runParser getInt "-9" `shouldBe` Just(-9, "")
 
 ------------------------------ TASK 4 ------------------------------
--- getIntLists должен работать без , в начале
 
 getIntLists :: Parser Char [[Int]]
 getIntLists =
-    (fmap (:) getIntList <*> getIntLists) <|> (skipSpaces *> eof *> pure [])
+    (fmap (:) (skipSpaces *> getIntList) <*> getIntListsNext)
+    <|> (eof *> pure [])
+  where
+    getIntListsNext :: Parser Char [[Int]]
+    getIntListsNext =
+        (fmap (:) (skipSpacesAndComma *> getIntList) <*> getIntListsNext)
+        <|> (skipSpaces *> eof *> pure [])
 
-getIntList :: Parser Char [Int]
-getIntList = (skipSpacesAndComma *> getInt <* ok) >>= (\n -> getSomeInts n)
+    getIntList :: Parser Char [Int]
+    getIntList = (getInt <* ok) >>= (\n -> getSomeInts n)
 
-getSomeInts :: Int -> Parser Char [Int]
-getSomeInts 0 = pure []
-getSomeInts n =
-  (fmap (:) (skipSpacesAndComma *> getInt <* ok)) <*> (getSomeInts (n - 1))
+    getSomeInts :: Int -> Parser Char [Int]
+    getSomeInts 0 = pure []
+    getSomeInts n =
+        (fmap (:) (skipSpacesAndComma *> getInt <* ok)) <*> (getSomeInts (n - 1))
 
-skipSpacesAndComma :: Parser Char ()
-skipSpacesAndComma = skipSpaces *> element ',' *> skipSpaces *> ok
+    skipSpacesAndComma :: Parser Char ()
+    skipSpacesAndComma = skipSpaces *> element ',' *> skipSpaces *> ok
 
-skipSpaces :: Parser Char ()
-skipSpaces = (element ' ' *> skipSpaces) <|> ok
+    skipSpaces :: Parser Char ()
+    skipSpaces = (element ' ' *> skipSpaces) <|> ok
 
 ------- Testing (unit):
 
@@ -211,13 +216,15 @@ spec34 = do
   describe "getIntLists works" $ do
     it "getIntLists on \"\"" $
       runParser getIntLists "" `shouldBe` Just([], "")
+    it "getIntLists on \" 0,0 \"" $
+      runParser getIntLists " 0,0 " `shouldBe` Just([[], []], "")
     it "getIntLists on \"2,  -1, a\"" $
-      runParser getIntLists ",2,  -1, a" `shouldSatisfy` isNothing
+      runParser getIntLists "2,  -1, a" `shouldSatisfy` isNothing
     it "getIntLists on \"1,1-\"" $
-      runParser getIntLists ",1,1-" `shouldSatisfy` isNothing
-    it "getIntLists on \"4,2,   -5,  +1,  9 \"" $
-      runParser getIntLists ",4,2,   -5,  +1,  9 "
+      runParser getIntLists "1,1-" `shouldSatisfy` isNothing
+    it "getIntLists on medium correct input" $
+      runParser getIntLists "4,2,   -5  ,  +1,  9  "
       `shouldBe` Just([[2, -5, 1, 9]], "")
-    it "getIntLists on \"2, 1,+10  , 3,5,-7, 2\"" $
-      runParser getIntLists ",2, 1,+10  , 3,5,-7, 2"
-      `shouldBe` Just([[1, 10], [5, -7, 2]], "")
+    it "getIntLists on long correct input" $
+      runParser getIntLists "2, 1,+10 , +0 , 3,5,-7, 2"
+      `shouldBe` Just([[1, 10], [], [5, -7, 2]], "")
