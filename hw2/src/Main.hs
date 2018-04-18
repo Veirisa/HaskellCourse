@@ -2,6 +2,7 @@ module Main where
 
 import           Block1 (testProp12, testUnit11)
 import           Block2 (testProp21, testProp23, testUnit21)
+import           Block3 (testUnit32, testUnit33, testUnit34)
 
 main :: IO ()
 main = putStrLn ("\n--------------- hw2 ---------------"  ++

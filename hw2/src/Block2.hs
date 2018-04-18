@@ -4,8 +4,9 @@
 module Block2 where
 
 import           Control.Monad    (liftM2)
-import           Data.Char        (isDigit)
+import           Data.Char        (isDigit, isSpace)
 import           Data.Maybe       (isJust, isNothing)
+import           Text.Read        (readMaybe)
 
 import           Test.Tasty       (TestTree)
 import           Test.Tasty       (defaultMain, testGroup)
@@ -18,17 +19,7 @@ import qualified Hedgehog.Range   as Range
 ------------------------------ TASK 1 ------------------------------
 
 stringSum :: String -> Maybe Int
-stringSum s = saveSum (map tryRead (words s))
-  where
-    tryRead :: String -> Maybe Int
-    tryRead s@(x : xs) =
-        if ((x == '-' && not (null xs)) || isDigit x) && all isDigit xs
-        then Just (read s)
-        else Nothing
-    tryRead _ = error "impossible situation"
-
-    saveSum :: [Maybe Int] -> Maybe Int
-    saveSum a = foldr (liftM2 (+)) (Just 0) a
+stringSum s = foldr (liftM2 (+)) (Just 0) (map readMaybe (words s))
 
 ------- Testing (unit):
 
@@ -59,33 +50,31 @@ spec21 = do
 testProp21 :: IO Bool
 testProp21 =
   checkParallel $ Group "Block2 - Task1" [
-      ("prop_incorrectSymbols", prop_incorrectSymbols),
-      ("prop_minuses", prop_minuses)
+      ("prop_stringSumJustOrNothing", prop_stringSumJustOrNothing)
     ]
 
-genIncorrect :: Gen [Char]
-genIncorrect = Gen.shuffle "\n\n\t\t  .0123456789--"
+genChar :: Gen Char
+genChar = Gen.element "-123 \t\n.a^)"
 
-prop_incorrectSymbols :: Property
-prop_incorrectSymbols = property $
-    forAll genIncorrect >>= \s -> stringSum s === Nothing
+genString :: Char -> Gen String
+genString c = Gen.shuffle (c : "\n\n\t\t  0123456789--")
 
-genCorrect :: Gen [Char]
-genCorrect = Gen.shuffle "\n\n\t\t  0123456789--"
-
-prop_minuses :: Property
-prop_minuses = property $
-    forAll genCorrect >>= \s ->
-        if checkMinuses True s
+prop_stringSumJustOrNothing :: Property
+prop_stringSumJustOrNothing = property $
+    forAll genChar >>= \c -> forAll (genString c) >>= \s ->
+        if all correctSymbol s && correctMinuses True s
         then isJust (stringSum s) === True
         else isNothing (stringSum s) === True
   where
-    checkMinuses :: Bool -> String -> Bool
-    checkMinuses wasSpace (x1 : x2 : xs) =
+    correctSymbol :: Char -> Bool
+    correctSymbol c = (c == '-') || isSpace c || isDigit c
+
+    correctMinuses :: Bool -> String -> Bool
+    correctMinuses wasSpace (x1 : x2 : xs) =
       ((x1 /= '-') || (wasSpace && isDigit x2)) &&
-      checkMinuses (x1 /= '-' && not (isDigit x1)) (x2 : xs)
-    checkMinuses wasSpace (x : []) = x /= '-'
-    checkMinuses _ _ = True
+      correctMinuses (x1 /= '-' && not (isDigit x1)) (x2 : xs)
+    correctMinuses wasSpace (x : []) = x /= '-'
+    correctMinuses _ _ = True
 
 ------------------------------ TASK 2 ------------------------------
 -- реализовать Traversable
@@ -93,15 +82,11 @@ prop_minuses = property $
 data Optional a = Optional (Maybe (Maybe a))
     deriving (Show, Eq)
 
--- fmap id  ==  id
--- fmap (f . g)  ==  fmap f . fmap g
 instance Functor Optional where
     fmap :: (a -> b) -> Optional a -> Optional b
     fmap f (Optional (Just mx)) = Optional (Just (fmap f mx))
     fmap _ _                    = Optional Nothing
 
--- fmap f x = pure f <*> x
--- liftA2 p (liftA2 q u v) = liftA2 f u . liftA2 g v
 instance Applicative Optional where
     pure :: a -> Optional a
     pure x = Optional (pure (pure x))
@@ -224,7 +209,7 @@ testProp23 =
     ]
 
 genInt :: Gen Int
-genInt = Gen.int (Range.linear 0 1000)
+genInt = Gen.int (Range.linear 0 100)
 
 genIntList :: Gen [Int]
 genIntList =
@@ -234,7 +219,7 @@ genIntList =
     Gen.list listLength Gen.enumBounded
 
 genFunc :: Gen (Int -> Int)
-genFunc = Gen.element [(*7), (^2), (+5), negate, signum, abs, id]
+genFunc = Gen.element [(*3), (^2), (+5), negate, signum, abs, id]
 
 combineFuncs :: (Int -> Int) -> (Int -> Int) -> (Int -> NonEmpty Int)
 combineFuncs f1 f2 = combFunc
