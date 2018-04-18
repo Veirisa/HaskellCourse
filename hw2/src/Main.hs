@@ -5,8 +5,8 @@ module Main where
 -- import           Block3 (testUnit32, testUnit33, testUnit34)
 
 main :: IO ()
-main = putStrLn ("\n--------------- hw2 ---------------"  ++
-                 "\nUse imported functions for testing.\n" ++
+main = putStrLn ("\n----------------- hw2 -----------------"  ++
+                 "\nImport and use functions for testing.\n" ++
                  "\nBlock1 | Task1 : testUnit11" ++
                  "\n       | Task2 : testProp12\n" ++
                  "\nBlock2 | Task1 : testUnit21, testProp21" ++

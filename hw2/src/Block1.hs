@@ -6,8 +6,7 @@ module Block1 where
 import           Control.Monad    (liftM2)
 import           Data.Either      (fromRight)
 
-import           Test.Tasty       (TestTree)
-import           Test.Tasty       (defaultMain)
+import           Test.Tasty       (TestTree, defaultMain)
 import           Test.Tasty.Hspec (Spec, describe, it, shouldBe, testSpec)
 
 import           Hedgehog         hiding (eval)
@@ -58,7 +57,7 @@ hspecTestTree11 :: IO TestTree
 hspecTestTree11 = testSpec "━━━ Block1 - Task1 ━━━" spec11
 
 spec11 :: Spec
-spec11 = do
+spec11 =
   describe "eval works" $ do
     it "eval on const input" $
       eval constExpr `shouldBe` Right 42
@@ -111,7 +110,7 @@ prop_binSequences = property $
       let
         bl = bin n
       in
-        (length bl, elem s bl) === (2 ^ n, True)
+        (length bl, s `elem` bl) === (2 ^ n, True)
 
 prop_binSeqElements :: Property
 prop_binSeqElements = property $

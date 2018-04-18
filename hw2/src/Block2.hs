@@ -8,8 +8,7 @@ import           Data.Char        (isDigit, isSpace)
 import           Data.Maybe       (isJust, isNothing)
 import           Text.Read        (readMaybe)
 
-import           Test.Tasty       (TestTree)
-import           Test.Tasty       (defaultMain)
+import           Test.Tasty       (TestTree, defaultMain)
 import           Test.Tasty.Hspec (Spec, describe, it, shouldBe, testSpec)
 
 import           Hedgehog
@@ -19,7 +18,7 @@ import qualified Hedgehog.Range   as Range
 ------------------------------ TASK 1 ------------------------------
 
 stringSum :: String -> Maybe Int
-stringSum s = foldr (liftM2 (+)) (Just 0) (map readMaybe (words s))
+stringSum s = foldr (liftM2 (+) . readMaybe) (Just 0) (words s)
 
 ------- Testing (unit):
 
@@ -30,7 +29,7 @@ hspecTestTree21 :: IO TestTree
 hspecTestTree21 = testSpec "━━━ Block2 - Task1 ━━━" spec21
 
 spec21 :: Spec
-spec21 = do
+spec21 =
   describe "stringSum works" $ do
     it "stringSum on correct inputs" $
       map stringSum passTests `shouldBe` passAnswers
@@ -73,12 +72,12 @@ prop_stringSumJustOrNothing = property $
     correctMinuses wasSpace (x1 : x2 : xs) =
       ((x1 /= '-') || (wasSpace && isDigit x2)) &&
       correctMinuses (x1 /= '-' && not (isDigit x1)) (x2 : xs)
-    correctMinuses _ (x : []) = x /= '-'
+    correctMinuses _ [x] = x /= '-'
     correctMinuses _ _ = True
 
 ------------------------------ TASK 2 ------------------------------
 
-data Optional a = Optional (Maybe (Maybe a))
+newtype Optional a = Optional (Maybe (Maybe a))
     deriving (Show, Eq)
 
 instance Functor Optional where
@@ -174,14 +173,14 @@ instance Applicative NonEmpty where
 
     (<*>) :: NonEmpty (a -> b) -> NonEmpty a -> NonEmpty b
     (f :| fs) <*> (x :| xs) =
-        f x :| (map f xs ++ [fi xi | fi <- fs, xi <- (x : xs)])
+        f x :| (map f xs ++ [fi xi | fi <- fs, xi <- x : xs])
 
 instance Monad NonEmpty where
     return :: a -> NonEmpty a
     return x = x :| []
 
     (>>=) :: NonEmpty a -> (a -> NonEmpty b) -> NonEmpty b
-    (x :| xs) >>= f  = f x `unite` concat (map (toList . f) xs)
+    (x :| xs) >>= f  = f x `unite` concatMap (toList . f) xs
       where
         toList :: NonEmpty a -> [a]
         toList (y :| ys) = y : ys

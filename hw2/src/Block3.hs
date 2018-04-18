@@ -1,19 +1,20 @@
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE LambdaCase   #-}
 
 module Block3 where
 
 import           Control.Applicative (Alternative, empty, (<|>))
 import           Data.Char           (isDigit, isSpace)
+import           Data.Functor        (($>))
 import           Data.Maybe          (isJust, isNothing)
 
-import           Test.Tasty          (TestTree)
-import           Test.Tasty          (defaultMain)
+import           Test.Tasty          (TestTree, defaultMain)
 import           Test.Tasty.Hspec    (Spec, describe, it, shouldBe,
                                       shouldSatisfy, testSpec)
 
 ------------------------------ TASK 1 ------------------------------
 
-data Parser s a = Parser { runParser :: [s] -> Maybe (a, [s]) }
+newtype Parser s a = Parser { runParser :: [s] -> Maybe (a, [s]) }
 
 instance Functor (Parser s) where
     fmap :: (a -> b) -> Parser s a -> Parser s b
@@ -35,7 +36,7 @@ instance Applicative (Parser s) where
 
 instance Alternative (Parser s) where
     empty :: Parser s a
-    empty = Parser $ \_ -> Nothing
+    empty = Parser $ const Nothing
 
     (<|>) :: Parser s a -> Parser s a -> Parser s a
     pa1 <|> pa2 = Parser $ \l -> case runParser pa1 l of
@@ -62,7 +63,7 @@ eof = Parser $ \l -> case l of
     _  -> Nothing
 
 satisfy :: (s -> Bool) -> Parser s s
-satisfy p = Parser $ \l -> case l of
+satisfy p = Parser $ \case
     []       -> Nothing
     (x : xs) -> if p x then Just (x, xs) else Nothing
 
@@ -70,8 +71,7 @@ element :: Eq s => s -> Parser s s
 element el = satisfy (== el)
 
 stream :: Eq s => [s] -> Parser s [s]
-stream []       = pure []
-stream (x : xs) = fmap (:) (element x) <*> (stream xs)
+stream = foldr ((<*>) . fmap (:) . element) (pure [])
 
 ------- Testing (unit):
 
@@ -138,7 +138,7 @@ getInt = fmap read correctInt
     digit = satisfy isDigit
 
     number :: Parser Char String
-    number = fmap (:) (digit) <*> (number <|> (ok *> pure ""))
+    number = fmap (:) digit <*> (number <|> (ok $> ""))
 
     correctInt :: Parser Char String
     correctInt =
@@ -185,20 +185,20 @@ spec33 = do
 getIntLists :: Parser Char [[Int]]
 getIntLists =
     (fmap (:) (skipSpaces *> getIntList) <*> getIntListsNext)
-    <|> (eof *> pure [])
+    <|> (eof $> [])
   where
     getIntListsNext :: Parser Char [[Int]]
     getIntListsNext =
         (fmap (:) (skipSpacesAndComma *> getIntList) <*> getIntListsNext)
-        <|> (skipSpaces *> eof *> pure [])
+        <|> ((skipSpaces *> eof) $> [])
 
     getIntList :: Parser Char [Int]
-    getIntList = (getInt <* ok) >>= (\n -> getSomeInts n)
+    getIntList = (getInt <* ok) >>= getSomeInts
 
     getSomeInts :: Int -> Parser Char [Int]
     getSomeInts 0 = pure []
     getSomeInts n =
-        (fmap (:) (skipSpacesAndComma *> getInt <* ok)) <*> (getSomeInts (n - 1))
+        fmap (:) (skipSpacesAndComma *> getInt <* ok) <*> getSomeInts (n - 1)
 
     skipSpacesAndComma :: Parser Char ()
     skipSpacesAndComma = skipSpaces *> element ',' *> skipSpaces *> ok
@@ -215,7 +215,7 @@ hspecTestTree34 :: IO TestTree
 hspecTestTree34 = testSpec "━━━ Block3 - Task4 ━━━" spec34
 
 spec34 :: Spec
-spec34 = do
+spec34 =
   describe "getIntLists works" $ do
     it "getIntLists on \"\"" $
       runParser getIntLists "" `shouldBe` Just([], "")
@@ -225,6 +225,8 @@ spec34 = do
       runParser getIntLists "2,  -1, a" `shouldSatisfy` isNothing
     it "getIntLists on \"1,1-\"" $
       runParser getIntLists "1,1-" `shouldSatisfy` isNothing
+    it "getIntLists on \" , 1, 2\"" $
+      runParser getIntLists " , 1, 2" `shouldSatisfy` isNothing
     it "getIntLists on medium correct input" $
       runParser getIntLists "4,2,   -5  ,  +1,  9  "
       `shouldBe` Just([[2, -5, 1, 9]], "")
