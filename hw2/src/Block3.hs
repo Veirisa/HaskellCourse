@@ -7,7 +7,7 @@ import           Data.Char           (isDigit, isSpace)
 import           Data.Maybe          (isJust, isNothing)
 
 import           Test.Tasty          (TestTree)
-import           Test.Tasty          (defaultMain, testGroup)
+import           Test.Tasty          (defaultMain)
 import           Test.Tasty.Hspec    (Spec, describe, it, shouldBe,
                                       shouldSatisfy, testSpec)
 
@@ -20,7 +20,7 @@ instance Functor (Parser s) where
     fmap f (Parser parser) = Parser (fmap (first f) . parser)
       where
         first :: (a -> b) -> (a,c) -> (b,c)
-        first f (x, y) = (f x, y)
+        first g (x, y) = (g x, y)
 
 instance Applicative (Parser s) where
     pure :: a -> Parser s a
@@ -35,7 +35,7 @@ instance Applicative (Parser s) where
 
 instance Alternative (Parser s) where
     empty :: Parser s a
-    empty = Parser $ \l -> Nothing
+    empty = Parser $ \_ -> Nothing
 
     (<|>) :: Parser s a -> Parser s a -> Parser s a
     pa1 <|> pa2 = Parser $ \l -> case runParser pa1 l of
@@ -87,37 +87,40 @@ spec32 = do
     it "ok on \"\"" $
       runParser ok "" `shouldBe` Just((), "")
     it "ok on [1, 2, 3]" $
-      runParser ok [1, 2, 3] `shouldBe` Just((), [1, 2, 3])
+      runParser ok ([1, 2, 3] :: [Int]) `shouldBe` Just((), [1, 2, 3])
   describe "eof works" $ do
     it "eof on \"\"" $
       runParser eof "" `shouldBe` Just((), "")
     it "eof on [1, 2, 3]" $
-      runParser eof [1, 2, 3] `shouldSatisfy` isNothing
+      runParser eof ([1, 2, 3] :: [Int]) `shouldSatisfy` isNothing
   describe "satisfy works" $ do
     it "satisfy ('c'>) on \"\"" $
       runParser (satisfy ('c'>)) "" `shouldSatisfy` isNothing
     it "satisfy (isJust) on [Nothing, Just 0]" $
-      runParser (satisfy isJust) [Nothing, Just 0] `shouldSatisfy` isNothing
+      runParser (satisfy isJust) [Nothing, Just (0 :: Int)]
+      `shouldSatisfy` isNothing
     it "satisfy (\\x -> mod x 2 == 0) on [2, 3, 4]" $
-      runParser (satisfy (\x -> mod x 2 == 0)) [2, 3, 4]
+      runParser (satisfy (\x -> mod x 2 == 0)) ([2, 3, 4] :: [Int])
       `shouldBe` Just(2, [3, 4])
   describe "element works" $ do
     it "element 'c' on \"\"" $
       runParser (element 'c') "" `shouldSatisfy` isNothing
     it "element Nothing on [Nothing, Just 0]" $
-      runParser (element Nothing) [Nothing, Just 0]
+      runParser (element Nothing) [Nothing, Just (0 :: Int)]
       `shouldBe` Just(Nothing, [Just 0])
     it "element 1 on [2, 3, 4]" $
-      runParser (element 1) [2, 3, 4] `shouldSatisfy` isNothing
+      runParser (element 1) ([2, 3, 4] :: [Int]) `shouldSatisfy` isNothing
   describe "stream works" $ do
     it "stream \"a\" on \"\"" $
       runParser (stream "a") "" `shouldSatisfy` isNothing
     it "stream \"ab\" on \"abcd\"" $
       runParser (stream "ab") "abcd" `shouldBe` Just("ab", "cd")
     it "stream [1, 2, 3] on [1, 2, 3]" $
-      runParser (stream [1, 2, 3]) [1, 2, 3] `shouldBe` Just([1, 2, 3], [])
+      runParser (stream [1, 2, 3]) ([1, 2, 3] :: [Int])
+      `shouldBe` Just([1, 2, 3], [])
     it "stream [4, 6] on [4, 5, 6]" $
-      runParser (stream [4, 6]) [4, 5, 6] `shouldSatisfy` isNothing
+      runParser (stream [4, 6]) ([4, 5, 6] :: [Int])
+      `shouldSatisfy` isNothing
 
 ------------------------------ TASK 3 ------------------------------
 
@@ -201,7 +204,7 @@ getIntLists =
     skipSpacesAndComma = skipSpaces *> element ',' *> skipSpaces *> ok
 
     skipSpaces :: Parser Char ()
-    skipSpaces = (element ' ' *> skipSpaces) <|> ok
+    skipSpaces = (satisfy isSpace *> skipSpaces) <|> ok
 
 ------- Testing (unit):
 

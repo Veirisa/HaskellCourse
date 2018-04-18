@@ -9,7 +9,7 @@ import           Data.Maybe       (isJust, isNothing)
 import           Text.Read        (readMaybe)
 
 import           Test.Tasty       (TestTree)
-import           Test.Tasty       (defaultMain, testGroup)
+import           Test.Tasty       (defaultMain)
 import           Test.Tasty.Hspec (Spec, describe, it, shouldBe, testSpec)
 
 import           Hedgehog
@@ -73,7 +73,7 @@ prop_stringSumJustOrNothing = property $
     correctMinuses wasSpace (x1 : x2 : xs) =
       ((x1 /= '-') || (wasSpace && isDigit x2)) &&
       correctMinuses (x1 /= '-' && not (isDigit x1)) (x2 : xs)
-    correctMinuses wasSpace (x : []) = x /= '-'
+    correctMinuses _ (x : []) = x /= '-'
     correctMinuses _ _ = True
 
 ------------------------------ TASK 2 ------------------------------
@@ -107,13 +107,13 @@ instance Monad Optional where
 instance Foldable Optional where
     foldr :: (a -> b -> b) -> b -> Optional a -> b
     foldr f y (Optional (Just (Just x))) = f x y
-    foldr f y _                          = y
+    foldr _ y _                          = y
 
 instance Traversable Optional where
     traverse :: Applicative f => (a -> f b) -> Optional a -> f (Optional b)
     traverse g (Optional (Just (Just x))) = pure pure <*> g x
-    traverse g (Optional (Just Nothing))  = pure (Optional (Just Nothing))
-    traverse g _                          = pure (Optional Nothing)
+    traverse _ (Optional (Just Nothing))  = pure (Optional (Just Nothing))
+    traverse _ _                          = pure (Optional Nothing)
 
 ------- Testing (ER):
 
@@ -219,7 +219,8 @@ genIntList =
     Gen.list listLength Gen.enumBounded
 
 genFunc :: Gen (Int -> Int)
-genFunc = Gen.element [(*3), (^2), (+5), negate, signum, abs, id]
+genFunc =
+    Gen.element [(*(3 :: Int)), (^(2 :: Int)), (+(5 :: Int)), negate, signum, abs, id]
 
 combineFuncs :: (Int -> Int) -> (Int -> Int) -> (Int -> NonEmpty Int)
 combineFuncs f1 f2 = combFunc
@@ -245,7 +246,7 @@ prop_monadNonEmptySecondLaw = property $
       in
         (m >>= return) === m
 
--- 3. (m >>= f) >>= g ≡ m >>= (\x -> f x >>= g)     - associativity
+-- 3. (m >>= f) >>= g ≡ m >>= (\a -> f a >>= g)     - associativity
 prop_monadNonEmptyThirdLaw :: Property
 prop_monadNonEmptyThirdLaw = property $
     forAll genInt >>= \x -> forAll genIntList >>= \xs ->
@@ -256,4 +257,4 @@ prop_monadNonEmptyThirdLaw = property $
         f = combineFuncs f1 f2
         g = combineFuncs g1 g2
       in
-        ((m >>= f) >>= g) === (m >>= (\x -> f x >>= g))
+        ((m >>= f) >>= g) === (m >>= (\a -> f a >>= g))

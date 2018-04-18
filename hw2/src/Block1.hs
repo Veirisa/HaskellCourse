@@ -7,7 +7,7 @@ import           Control.Monad    (liftM2)
 import           Data.Either      (fromRight)
 
 import           Test.Tasty       (TestTree)
-import           Test.Tasty       (defaultMain, testGroup)
+import           Test.Tasty       (defaultMain)
 import           Test.Tasty.Hspec (Spec, describe, it, shouldBe, testSpec)
 
 import           Hedgehog         hiding (eval)
@@ -83,6 +83,7 @@ spec11 = do
 
 ------------------------------ TASK 2 ------------------------------
 
+bin :: Int -> [[Int]]
 bin n = foldr ($) [[]] (replicate n (>>= \s -> [0 : s, 1 : s]))
 
 ------- Testing (property-based):
