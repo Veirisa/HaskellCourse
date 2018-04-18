@@ -3,6 +3,7 @@
 module Block3 where
 
 import           Control.Applicative
+import           Data.Char           (isDigit)
 import           Data.Maybe          (isJust, isNothing)
 
 import           Test.Tasty          (TestTree)
@@ -119,13 +120,29 @@ spec32 = do
       runParser (stream [4, 6]) [4, 5, 6] `shouldSatisfy` isNothing
 
 ------------------------------ TASK 3 ------------------------------
--- Реализовать brackets и getInt
 
 brackets :: Parser Char ()
-brackets = undefined
+brackets = insideBrackets *> eof
+  where
+    insideBrackets :: Parser Char ()
+    insideBrackets =
+        (element '(' *> insideBrackets *> element ')' *> insideBrackets) <|> ok
 
 getInt :: Parser Char Int
-getInt = undefined
+getInt = fmap read correctInt
+  where
+    digit :: Parser Char Char
+    digit = satisfy isDigit
+
+    number :: Parser Char String
+    number = fmap (:) (digit) <*> (number <|> (eof *> pure ""))
+
+    correctInt :: Parser Char String
+    correctInt =
+      let
+        joinNotPlus x = if x == '+' then id else (x:)
+      in
+        fmap joinNotPlus (element '-' <|> element '+' <|> digit) <*> number
 
 ------- Testing (unit):
 
@@ -144,15 +161,15 @@ spec33 = do
       runParser brackets "(())" `shouldSatisfy` isJust
     it "brackets on \"()()\"" $
       runParser brackets "()()" `shouldSatisfy` isJust
-    it "brackets on \"((()()))()(()()())(())\"" $
+    it "brackets on long correct input" $
       runParser brackets "((()()))()(()()())(())" `shouldSatisfy` isJust
-    it "brackets on \"((()()))()(()(())(())\"" $
+    it "brackets on long incorrect input" $
       runParser brackets "((()()))()(()(())(())" `shouldSatisfy` isNothing
   describe "getInt works" $ do
     it "getInt on \"\"" $
       runParser getInt "" `shouldSatisfy` isNothing
     it "getInt on \"0123\"" $
-      runParser getInt "" `shouldBe` Just(123, "")
+      runParser getInt "0123" `shouldBe` Just(123, "")
     it "getInt on \"45.6\"" $
       runParser getInt "45.6" `shouldSatisfy` isNothing
     it "getInt on \"7-8\"" $
@@ -163,8 +180,8 @@ spec33 = do
 ------------------------------ TASK 4 ------------------------------
 -- Реализовать getNumList
 
-getNumList :: Parser Char [[Int]]
-getNumList = undefined
+getIntLists :: Parser Char [[Int]]
+getIntLists = undefined
 
 ------- Testing (unit):
 
@@ -176,16 +193,16 @@ hspecTestTree34 = testSpec "━━━ Block3 - Task4 ━━━" spec34
 
 spec34 :: Spec
 spec34 = do
-  describe "getNumList works" $ do
-    it "getNumList on \"\"" $
-      runParser getNumList "" `shouldBe` Just([], "")
-    it "getNumList on \"2,  -1, a\"" $
-      runParser getNumList "2,  -1, a" `shouldSatisfy` isNothing
-    it "getNumList on \"1,1-\"" $
-      runParser getNumList "1,1-" `shouldSatisfy` isNothing
-    it "getNumList on \"4,2,   -5,  +1,  9 \"" $
-      runParser getNumList "4,2,   -5,  +1,  9 "
+  describe "getIntLists works" $ do
+    it "getIntLists on \"\"" $
+      runParser getIntLists "" `shouldBe` Just([], "")
+    it "getIntLists on \"2,  -1, a\"" $
+      runParser getIntLists "2,  -1, a" `shouldSatisfy` isNothing
+    it "getIntLists on \"1,1-\"" $
+      runParser getIntLists "1,1-" `shouldSatisfy` isNothing
+    it "getIntLists on \"4,2,   -5,  +1,  9 \"" $
+      runParser getIntLists "4,2,   -5,  +1,  9 "
       `shouldBe` Just([[2, -5, 1, 9]], "")
-    it "getNumList on \"2, 1,+10  , 3,5,-7, 2\"" $
-      runParser getNumList "2, 1,+10  , 3,5,-7, 2"
+    it "getIntLists on \"2, 1,+10  , 3,5,-7, 2\"" $
+      runParser getIntLists "2, 1,+10  , 3,5,-7, 2"
       `shouldBe` Just([[1, 10], [5, -7, 2]], "")

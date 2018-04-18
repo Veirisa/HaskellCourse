@@ -77,7 +77,6 @@ prop_stringSumJustOrNothing = property $
     correctMinuses _ _ = True
 
 ------------------------------ TASK 2 ------------------------------
--- реализовать Traversable
 
 data Optional a = Optional (Maybe (Maybe a))
     deriving (Show, Eq)
@@ -112,7 +111,9 @@ instance Foldable Optional where
 
 instance Traversable Optional where
     traverse :: Applicative f => (a -> f b) -> Optional a -> f (Optional b)
-    traverse = undefined
+    traverse g (Optional (Just (Just x))) = pure pure <*> g x
+    traverse g (Optional (Just Nothing))  = pure (Optional (Just Nothing))
+    traverse g _                          = pure (Optional Nothing)
 
 ------- Testing (ER):
 
@@ -159,7 +160,6 @@ instance Traversable Optional where
 --     = f a >>= g                                  function application
 
 ------------------------------ TASK 3 ------------------------------
--- реализовать Traversable
 
 data NonEmpty a = a :| [a]
     deriving (Show, Eq)
@@ -196,7 +196,7 @@ instance Foldable NonEmpty where
 
 instance Traversable NonEmpty where
     traverse :: Applicative f => (a -> f b) -> NonEmpty a -> f (NonEmpty b)
-    traverse = undefined
+    traverse g (x :| xs) = fmap (:|) (g x) <*> traverse g xs
 
 ------- Testing (property-based):
 
