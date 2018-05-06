@@ -2,11 +2,12 @@
 
 module Main where
 
-import           Control.Monad (liftM2)
-import           Data.Char     (isDigit, isLetter, isLower)
-import           Data.Either   (fromRight, isLeft, isRight)
-import qualified Data.Map      as HM (Map, delete, fromList, insert, member,
-                                      (!))
+import           Control.Monad        (liftM2)
+import           Control.Monad.Reader (Reader, ask, local, runReader)
+import           Data.Char            (isDigit, isLetter, isLower)
+import           Data.Either          (fromRight, isLeft, isRight)
+import qualified Data.Map             as HM (Map, delete, fromList, insert,
+                                             member, (!))
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -31,36 +32,42 @@ isCorrectName :: String -> Bool
 isCorrectName (x : xs) = isLower x && (all (\c -> isDigit c || isLetter c) xs)
 isCorrectName _        = False
 
-eval :: Expr -> HM.Map String Int -> Either ExprError Int
-eval (Lit x) hm = return x
-eval (Var v) hm =
+type ReaderForEval = Reader (HM.Map String Int) (Either ExprError Int)
+
+liftM2Expr :: (Int -> Int -> Int) -> Expr -> Expr -> ReaderForEval
+liftM2Expr op l r = do
+  lCalced <- eval l
+  rCalced <- eval r
+  return $ liftM2 op lCalced rCalced
+
+eval :: Expr -> ReaderForEval
+eval (Lit x) = return $ Right x
+eval (Var v) = do
+  hm <- ask
   if not (isCorrectName v)
-  then Left (NameError v)
+  then return $ Left (NameError v)
   else
-      if HM.member v hm
-      then return (hm HM.! v)
-      else Left NotEvalError
-eval (Add l r) hm = liftM2 (+) (eval l hm) (eval r hm)
-eval (Sub l r) hm = liftM2 (-) (eval l hm) (eval r hm)
-eval (Mul l r) hm = liftM2 (*) (eval l hm) (eval r hm)
-eval (Div l r) hm =
-  let
-    rCalced = eval r hm
-    isNewError = fromRight 1 rCalced == 0
-  in
-    liftM2 div (eval l hm) (if isNewError then Left DivError else rCalced)
-eval (Let v eqExpr inExpr) hm =
-  let
-    eqExprCalced =
-      if isCorrectName v
-      then eval eqExpr hm
-      else Left (NameError v)
-    newHM =
-      if isRight eqExprCalced
-      then HM.insert v (fromRight 0 eqExprCalced) hm
-      else hm
-  in
-    if isLeft eqExprCalced then eqExprCalced else eval inExpr newHM
+      if not (HM.member v hm)
+      then return $ Left NotEvalError
+      else return $ Right (hm HM.! v)
+eval (Add l r) = liftM2Expr (+) l r
+eval (Sub l r) = liftM2Expr (-) l r
+eval (Mul l r) = liftM2Expr (*) l r
+eval (Div l r) = do
+    rCalced <- eval r
+    if fromRight 1 rCalced == 0
+    then return $ Left DivError
+    else do
+        lCalced <- eval l
+        return $ liftM2 div lCalced rCalced
+eval (Let v eqExpr inExpr) = do
+    if not (isCorrectName v)
+    then return $ Left (NameError v)
+    else do
+        eqExprCalced <- eval eqExpr
+        if isLeft eqExprCalced
+        then return $ eqExprCalced
+        else local (HM.insert v (fromRight 0 eqExprCalced)) (eval inExpr)
 
 main :: IO ()
 main = putStrLn "hw3"
