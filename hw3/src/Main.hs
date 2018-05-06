@@ -2,12 +2,18 @@
 
 module Main where
 
-import           Control.Monad        (liftM2)
-import           Control.Monad.Reader (Reader, ask, local, runReader)
-import           Data.Char            (isDigit, isLetter, isLower)
-import           Data.Either          (fromRight, isLeft, isRight)
-import qualified Data.Map             as HM (Map, delete, fromList, insert,
-                                             member, (!))
+import           Control.Monad              (liftM2)
+import           Control.Monad.Reader       (Reader, ask, local, runReader)
+import           Data.Char                  (isDigit, isLetter, isLower)
+import           Data.Either                (fromRight, isLeft, isRight)
+import qualified Data.Map                   as M (Map, delete, fromList, insert,
+                                                  member, (!))
+
+import           Data.Void
+import           Text.Megaparsec
+import           Text.Megaparsec.Char
+import qualified Text.Megaparsec.Char.Lexer as L
+import           Text.Megaparsec.Expr
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -18,6 +24,7 @@ data Expr = Lit Int
           | Mul Expr Expr
           | Div Expr Expr
           | Let String Expr Expr
+    deriving Show
 
 data ExprError = DivError | NotEvalError | NameError String
     deriving Eq
@@ -32,7 +39,7 @@ isCorrectName :: String -> Bool
 isCorrectName (x : xs) = isLower x && (all (\c -> isDigit c || isLetter c) xs)
 isCorrectName _        = False
 
-type ReaderForEval = Reader (HM.Map String Int) (Either ExprError Int)
+type ReaderForEval = Reader (M.Map String Int) (Either ExprError Int)
 
 liftM2Expr :: (Int -> Int -> Int) -> Expr -> Expr -> ReaderForEval
 liftM2Expr op l r = do
@@ -43,13 +50,13 @@ liftM2Expr op l r = do
 eval :: Expr -> ReaderForEval
 eval (Lit x) = return $ Right x
 eval (Var v) = do
-  hm <- ask
+  m <- ask
   if not (isCorrectName v)
   then return $ Left (NameError v)
   else
-      if not (HM.member v hm)
+      if not (M.member v m)
       then return $ Left NotEvalError
-      else return $ Right (hm HM.! v)
+      else return $ Right (m M.! v)
 eval (Add l r) = liftM2Expr (+) l r
 eval (Sub l r) = liftM2Expr (-) l r
 eval (Mul l r) = liftM2Expr (*) l r
@@ -67,7 +74,62 @@ eval (Let v eqExpr inExpr) = do
         eqExprCalced <- eval eqExpr
         if isLeft eqExprCalced
         then return $ eqExprCalced
-        else local (HM.insert v (fromRight 0 eqExprCalced)) (eval inExpr)
+        else local (M.insert v (fromRight 0 eqExprCalced)) (eval inExpr)
+
+------------------------------ TASK 2 ------------------------------
+
+type Parser = Parsec Void String
+
+sc :: Parser ()
+sc = L.space space1 empty empty
+
+lexeme :: Parser a -> Parser a
+lexeme = L.lexeme sc
+
+symbol :: String -> Parser String
+symbol = L.symbol sc
+
+parens :: Parser a -> Parser a
+parens = between (symbol "(") (symbol ")")
+
+integer :: Parser Int
+integer = lexeme L.decimal
+
+name :: Parser String
+name = (lexeme . try) (correctName >>= return)
+  where
+    correctName = (:) <$> letterChar <*> many alphaNumChar
+
+rword :: String -> Parser ()
+rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
+
+parserLet :: Parser Expr
+parserLet = do
+  rword "let"
+  var <- name
+  symbol "="
+  eqExpr <- parserExpr
+  rword "in"
+  inExpr <- parserExpr
+  return (Let var eqExpr inExpr)
+
+parserExpr :: Parser Expr
+parserExpr = makeExprParser exprTerm exprOperators
+
+exprOperators :: [[Operator Parser Expr]]
+exprOperators =
+  [ [ InfixL (Mul <$ symbol "*")
+    , InfixL (Div <$ symbol "/") ]
+  , [ InfixL (Add <$ symbol "+")
+    , InfixL (Sub <$ symbol "-") ] ]
+
+exprTerm :: Parser Expr
+exprTerm = parens parserExpr
+  <|> parserLet
+  <|> Var <$> name
+  <|> Lit <$> integer
+
+------------------------------- MAIN -------------------------------
 
 main :: IO ()
-main = putStrLn "hw3"
+main = undefined
