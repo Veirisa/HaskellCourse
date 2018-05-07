@@ -1,4 +1,7 @@
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 module Main where
 
@@ -15,7 +18,12 @@ import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
 
-import           Control.Monad.State.Lazy   (State, state)
+import           Control.Monad.Except
+import           Control.Monad.Reader
+import           Control.Monad.State.Lazy
+import           Control.Monad.Trans.Except (throwE)
+-- import           Control.Monad.Trans.Reader
+-- import           Control.Monad.Trans.State
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -38,36 +46,26 @@ instance Show ExprError where
         = "The expression can't be fully evaluated because variable \""
         ++ name ++ "\" doesn't exist"
 
-type ReaderForEval = Reader (M.Map String Int) (Either ExprError Int)
-
-liftM2Expr :: (Int -> Int -> Int) -> Expr -> Expr -> ReaderForEval
-liftM2Expr op l r = do
-  lCalced <- eval l
-  rCalced <- eval r
-  return $ liftM2 op lCalced rCalced
-
-eval :: Expr -> ReaderForEval
-eval (Lit x) = return $ Right x
+eval :: Expr -> ExceptT ExprError (Reader (M.Map String Int)) Int
+eval (Lit x) = return x
 eval (Var v) = do
-  m <- ask
+  m <- lift ask
   if not (M.member v m)
-  then return $ Left (NotEvalError v)
-  else return $ Right (m M.! v)
-eval (Add l r) = liftM2Expr (+) l r
-eval (Sub l r) = liftM2Expr (-) l r
-eval (Mul l r) = liftM2Expr (*) l r
+  then throwE (NotEvalError v)
+  else return (m M.! v)
+eval (Add l r) = liftM2 (+) (eval l) (eval r)
+eval (Sub l r) = liftM2 (-) (eval l) (eval r)
+eval (Mul l r) = liftM2 (*) (eval l) (eval r)
 eval (Div l r) = do
     rCalced <- eval r
-    if fromRight 1 rCalced == 0
-    then return $ Left DivError
+    if rCalced == 0
+    then throwE DivError
     else do
         lCalced <- eval l
-        return $ liftM2 div lCalced rCalced
+        return $ div lCalced rCalced
 eval (Let v eqExpr inExpr) = do
     eqExprCalced <- eval eqExpr
-    if isLeft eqExprCalced
-    then return $ eqExprCalced
-    else local (M.insert v (fromRight 0 eqExprCalced)) (eval inExpr)
+    local (M.insert v eqExprCalced) (eval inExpr)
 
 ------------------------------ TASK 2 ------------------------------
 
@@ -164,7 +162,7 @@ instance Show InterprError where
     show (InterprActionError err num) =
         show num ++ ": " ++ show err
 
-------- Fuctions
+------- Functions
 
 creature :: String -> Int -> State (M.Map String Int) VerdictAction
 creature name val = action name val False CreatureError
