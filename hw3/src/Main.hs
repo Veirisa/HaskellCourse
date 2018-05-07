@@ -138,42 +138,60 @@ exprTerm =
   <|> Var <$> name
   <|> Lit <$> integer
 
------------------------------- TASK 3 ------------------------------
+---------------------------- STRUCTURES ----------------------------
 
-data VerdictVarAction = Suсcess | Fail VarActionError
+data Action = Creature String Expr
+            | Assignment String Expr
+            | Read String
+            | Write Expr
+    deriving Show
 
-data VarActionError = CreatureError String | AssigmentError String
-    deriving Eq
+data VerdictAction = Suсcess | Fail ActionError
 
-instance Show VarActionError where
-    show :: VarActionError -> String
+data ActionError = CreatureError String
+                 | AssigmentError String
+                 | ReadError String
+
+instance Show ActionError where
+    show :: ActionError -> String
     show (CreatureError name) =
         "The variable " ++ name ++ " can't be created because it already exists"
     show (AssigmentError name) =
         "The variable " ++ name ++ " can't be changed because it doesn't exist"
+    show (ReadError name) =
+        "The variable " ++ name ++ " can't be readed because it doesn't exist"
 
-creature :: String -> Int -> State (M.Map String Int) VerdictVarAction
-creature name val = varAction name val False (CreatureError name)
+data InterprError = InterprExprError ExprError Int
+                  | InterprActionError ActionError Int
 
-assignment :: String -> Int -> State (M.Map String Int) VerdictVarAction
-assignment name val = varAction name val True (AssigmentError name)
+instance Show InterprError where
+    show :: InterprError -> String
+    show (InterprExprError err num) =
+        show num ++ ": " ++ show err
+    show (InterprActionError err num) =
+        show num ++ ": " ++ show err
 
-varAction :: String -> Int -> Bool -> VarActionError
-             -> State (M.Map String Int) VerdictVarAction
-varAction name val mustBeMember err = state $ \m ->
+------------------------------ TASK 3 ------------------------------
+
+creature :: String -> Int -> State (M.Map String Int) VerdictAction
+creature name val = eqAction name val False (CreatureError name)
+
+assignment :: String -> Int -> State (M.Map String Int) VerdictAction
+assignment name val = eqAction name val True (AssigmentError name)
+
+eqAction :: String -> Int -> Bool -> ActionError
+             -> State (M.Map String Int) VerdictAction
+eqAction name val mustBeMember err = state $ \m ->
     if M.member name m == mustBeMember
     then (Suсcess, M.insert name val m)
     else (Fail err, m)
 
 ------------------------------ TASK 4 ------------------------------
 
-data VarAction = Creature String Expr | Assignment String Expr
-    deriving Show
+parserAction :: Parser Action
+parserAction = parserCreature <|> parserAssigment <|> parserRead <|> parserWrite
 
-parserVarAction :: Parser VarAction
-parserVarAction = parserCreature <|> parserAssigment
-
-parserCreature :: Parser VarAction
+parserCreature :: Parser Action
 parserCreature = do
   rword "mut"
   var <- name
@@ -181,49 +199,33 @@ parserCreature = do
   expr <- parserExpr
   return (Creature var expr)
 
-parserAssigment :: Parser VarAction
+parserAssigment :: Parser Action
 parserAssigment = do
   var <- name
   symbol "="
   expr <- parserExpr
   return (Assignment var expr)
 
+parserRead :: Parser Action
+parserRead = do
+  symbol ">"
+  var <- name
+  return (Read var)
+
+parserWrite :: Parser Action
+parserWrite = do
+  symbol "<"
+  expr <- parserExpr
+  return (Write expr)
+
 ------------------------------ TASK 5 ------------------------------
 
-data InterprError = InterprExprError ExprError Int
-                  | InterprVarActionError VarActionError Int
-                  | InterprReadError ReadError Int
-                  | InterprWriteError WriteError Int
-
-instance Show InterprError where
-    show :: InterprError -> String
-    show (InterprExprError err i)      = show i ++ " | (expr): " ++ show err
-    show (InterprVarActionError err i) = show i ++ " | (var action): " ++ show err
-    show (InterprReadError err i)      = show i ++ " | (reading): " ++ show err
-    show (InterprWriteError err i)     = show i ++ " | (writing): " ++ show err
-
-data InterprAction = VarAction | Read | Write
-
-interpritation :: [InterprAction] -> State (M.Map String Int) ()
+interpritation :: [Action] -> State (M.Map String Int) ()
 interpritation = undefined
 
 ------------------------------ TASK 6 ------------------------------
 
-data WriteError = WriteError String
-
-instance Show WriteError where
-    show :: WriteError -> String
-    show (WriteError name) =
-        "The variable " ++ name ++ " can't be writed because it doesn't exist"
-
 ------------------------------ TASK 7 ------------------------------
-
-data ReadError = ReadError String
-
-instance Show ReadError where
-    show :: ReadError -> String
-    show (ReadError name) =
-        "The variable " ++ name ++ " can't be readed because it doesn't exist"
 
 ------------------------------ TASK 8* -----------------------------
 
