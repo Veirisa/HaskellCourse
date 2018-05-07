@@ -1,14 +1,10 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE InstanceSigs               #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE InstanceSigs #-}
 
 module Main where
 
 import           Control.Monad              (liftM2)
 import           Control.Monad.Reader       (Reader, ask, local, runReader)
 import           Data.Char                  (isDigit, isLetter, isLower)
-import           Data.Either                (fromRight, isLeft, isRight)
 import qualified Data.Map                   as M (Map, delete, fromList, insert,
                                                   member, (!))
 
@@ -229,8 +225,8 @@ parserAction = parserCreature <|> parserAssignment <|> parserRead <|> parserWrit
 
 ------- Interpritation
 
-interpritation :: [Action] -> State (M.Map String Int) ()
-interpritation = undefined
+interpritation :: [Action] -> IO ()
+interpritation actions = undefined
 
 ------------------------------ TASK 8* -----------------------------
 
@@ -242,4 +238,9 @@ parserProgram :: Parser [Action]
 parserProgram = many parserAction
 
 main :: IO ()
-main = putStrLn "hw3"
+main = do
+    path <- getLine
+    code <- readFile path
+    case runParser parserProgram "" code of
+        Right pr -> interpritation pr
+        Left err -> putStrLn $ show err
