@@ -10,10 +10,12 @@ import qualified Data.Map                   as M (Map, delete, fromList, insert,
                                                   member, (!))
 
 import           Data.Void
-import           Text.Megaparsec
+import           Text.Megaparsec            hiding (State)
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
+
+import           Control.Monad.State.Lazy
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -104,7 +106,7 @@ name = (lexeme . try) (correctName >>= check)
     correctName = (:) <$> letterChar <*> many alphaNumChar
     check x =
        if x `elem` rws
-       then fail $ "keyword " ++ show x ++ " cannot be an identifier"
+       then fail $ "keyword " ++ show x ++ " cannot be a variable name"
        else return x
 
 rword :: String -> Parser ()
@@ -131,13 +133,31 @@ exprOperators =
     , InfixL (Sub <$ symbol "-") ] ]
 
 exprTerm :: Parser Expr
-exprTerm = parens parserExpr
+exprTerm =
+  parens (parserExpr <|> parserLet)
   <|> Var <$> name
   <|> Lit <$> integer
-  <|> parserLet
 
 ------------------------------ TASK 3 ------------------------------
 
 data VarAction = Creature String Int | Assignment String Int
 
+data VerdictVarAction = Suсcess | Fail
+    deriving Eq
+
+creature :: String -> Int -> State (M.Map String Int) VerdictVarAction
+creature name val = varAction name val False
+
+assignment :: String -> Int -> State (M.Map String Int) VerdictVarAction
+assignment name val = varAction name val True
+
+varAction :: String -> Int -> Bool -> State (M.Map String Int) VerdictVarAction
+varAction name val mustBeMember = state $ \m ->
+    if M.member name m == mustBeMember
+    then (Suсcess, M.insert name val m)
+    else (Fail, m)
+
 ------------------------------- MAIN -------------------------------
+
+main :: IO ()
+main = putStrLn "hw3"
