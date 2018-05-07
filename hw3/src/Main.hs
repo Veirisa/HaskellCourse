@@ -137,17 +137,15 @@ data Action = Creature String Expr
             | Write Expr
     deriving Show
 
-data VerdictAction = Suсcess | Fail ActionError
-
 data ActionError = CreatureError String
-                 | AssigmentError String
+                 | AssignmentError String
                  | ReadError String
 
 instance Show ActionError where
     show :: ActionError -> String
     show (CreatureError name) =
         "The variable \"" ++ name ++ "\" can't be created because it already exists"
-    show (AssigmentError name) =
+    show (AssignmentError name) =
         "The variable \"" ++ name ++ "\" can't be changed because it doesn't exist"
     show (ReadError name) =
         "The variable \"" ++ name ++ "\" can't be readed because it doesn't exist"
@@ -164,24 +162,38 @@ instance Show InterprError where
 
 ------- Functions
 
-creature :: String -> Int -> State (M.Map String Int) VerdictAction
-creature name val = action name val False CreatureError
+creature :: String -> Int -> ExceptT ActionError (State (M.Map String Int)) ()
+creature name val = do
+  m <- lift get
+  if not (M.member name m)
+  then do
+    lift $ modify (M.insert name val)
+    return ()
+  else throwE (CreatureError name)
 
-assignment :: String -> Int -> State (M.Map String Int) VerdictAction
-assignment name val = action name val True AssigmentError
 
-readVar :: String -> State (M.Map String Int) VerdictAction
-readVar = undefined
+assignment :: String -> Int -> ExceptT ActionError (State (M.Map String Int)) ()
+assignment name val = do
+  m <- lift get
+  if M.member name m
+  then do
+      lift $ modify (M.insert name val)
+      return ()
+  else throwE (AssignmentError name)
 
-writeExpr :: Int -> State (M.Map String Int) VerdictAction
-writeExpr = undefined
+writeExpr :: Int -> ExceptT ActionError (StateT (M.Map String Int) IO) ()
+writeExpr val = do
+  lift $ lift $ putStrLn (show val)
 
-action :: String -> Int -> Bool -> (String -> ActionError)
-             -> State (M.Map String Int) VerdictAction
-action name val mustBeMember err = state $ \m ->
-    if M.member name m == mustBeMember
-    then (Suсcess, M.insert name val m)
-    else (Fail (err name), m)
+readVar :: String -> ExceptT ActionError (StateT (M.Map String Int) IO) ()
+readVar name = do
+  m <- lift get
+  valStr <- lift $ lift $ getLine
+  if M.member name m
+  then do
+      lift $ modify (M.insert name (read valStr))
+      return ()
+  else throwE (ReadError name)
 
 ------- Parsers
 
@@ -193,8 +205,8 @@ parserCreature = do
   expr <- parserExpr
   return (Creature var expr)
 
-parserAssigment :: Parser Action
-parserAssigment = do
+parserAssignment :: Parser Action
+parserAssignment = do
   var <- identifier
   symbol "="
   expr <- parserExpr
@@ -213,7 +225,7 @@ parserWrite = do
   return (Write expr)
 
 parserAction :: Parser Action
-parserAction = parserCreature <|> parserAssigment <|> parserRead <|> parserWrite
+parserAction = parserCreature <|> parserAssignment <|> parserRead <|> parserWrite
 
 ------- Interpritation
 
