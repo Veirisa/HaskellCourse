@@ -15,7 +15,7 @@ import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec.Expr
 
-import           Control.Monad.State.Lazy
+import           Control.Monad.State.Lazy   (State, state)
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -98,7 +98,7 @@ integer :: Parser Int
 integer = lexeme L.decimal
 
 rws :: [String]
-rws = ["let", "in"]
+rws = ["let", "in", "mut"]
 
 name :: Parser String
 name = (lexeme . try) (correctName >>= check)
@@ -140,8 +140,6 @@ exprTerm =
 
 ------------------------------ TASK 3 ------------------------------
 
-data VarAction = Creature String Int | Assignment String Int
-
 data VerdictVarAction = Suсcess | Fail
     deriving Eq
 
@@ -156,6 +154,29 @@ varAction name val mustBeMember = state $ \m ->
     if M.member name m == mustBeMember
     then (Suсcess, M.insert name val m)
     else (Fail, m)
+
+------------------------------ TASK 4 ------------------------------
+
+data VarAction = Creature String Expr | Assignment String Expr
+    deriving Show
+
+parserVarAction :: Parser VarAction
+parserVarAction = parserCreature <|> parserAssigment
+
+parserCreature :: Parser VarAction
+parserCreature = do
+  rword "mut"
+  var <- name
+  symbol "="
+  expr <- parserExpr
+  return (Creature var expr)
+
+parserAssigment :: Parser VarAction
+parserAssigment = do
+  var <- name
+  symbol "="
+  expr <- parserExpr
+  return (Assignment var expr)
 
 ------------------------------- MAIN -------------------------------
 
