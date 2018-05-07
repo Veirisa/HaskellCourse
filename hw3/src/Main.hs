@@ -28,18 +28,15 @@ data Expr = Lit Int
           | Let String Expr Expr
     deriving Show
 
-data ExprError = DivError | NotEvalError | NameError String
+data ExprError = DivError | NotEvalError String
     deriving Eq
 
 instance Show ExprError where
     show :: ExprError -> String
-    show DivError         = "The expression contains division by 0"
-    show NotEvalError     = "The expression can't be fully evaluated"
-    show (NameError name) = "Name \"" ++ name ++ "\" is incorrect"
-
-isCorrectName :: String -> Bool
-isCorrectName (x : xs) = isLower x && (all (\c -> isDigit c || isLetter c) xs)
-isCorrectName _        = False
+    show DivError = "The expression contains division by 0"
+    show (NotEvalError name)
+        = "The expression can't be fully evaluated because variable \""
+        ++ name ++ "\" doesn't exist"
 
 type ReaderForEval = Reader (M.Map String Int) (Either ExprError Int)
 
@@ -53,12 +50,9 @@ eval :: Expr -> ReaderForEval
 eval (Lit x) = return $ Right x
 eval (Var v) = do
   m <- ask
-  if not (isCorrectName v)
-  then return $ Left (NameError v)
-  else
-      if not (M.member v m)
-      then return $ Left NotEvalError
-      else return $ Right (m M.! v)
+  if not (M.member v m)
+  then return $ Left (NotEvalError v)
+  else return $ Right (m M.! v)
 eval (Add l r) = liftM2Expr (+) l r
 eval (Sub l r) = liftM2Expr (-) l r
 eval (Mul l r) = liftM2Expr (*) l r
@@ -70,13 +64,10 @@ eval (Div l r) = do
         lCalced <- eval l
         return $ liftM2 div lCalced rCalced
 eval (Let v eqExpr inExpr) = do
-    if not (isCorrectName v)
-    then return $ Left (NameError v)
-    else do
-        eqExprCalced <- eval eqExpr
-        if isLeft eqExprCalced
-        then return $ eqExprCalced
-        else local (M.insert v (fromRight 0 eqExprCalced)) (eval inExpr)
+    eqExprCalced <- eval eqExpr
+    if isLeft eqExprCalced
+    then return $ eqExprCalced
+    else local (M.insert v (fromRight 0 eqExprCalced)) (eval inExpr)
 
 ------------------------------ TASK 2 ------------------------------
 
@@ -100,13 +91,13 @@ integer = lexeme L.decimal
 rws :: [String]
 rws = ["let", "in", "mut"]
 
-name :: Parser String
-name = (lexeme . try) (correctName >>= check)
+identifier :: Parser String
+identifier = (lexeme . try) (correctName >>= check)
   where
     correctName = (:) <$> letterChar <*> many alphaNumChar
     check x =
        if x `elem` rws
-       then fail $ "keyword " ++ show x ++ " can't be a variable name"
+       then fail $ "keyword \"" ++ show x ++ "\" can't be a variable name"
        else return x
 
 rword :: String -> Parser ()
@@ -115,7 +106,7 @@ rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 parserLet :: Parser Expr
 parserLet = do
   rword "let"
-  var <- name
+  var <- identifier
   symbol "="
   eqExpr <- parserExpr
   rword "in"
@@ -135,10 +126,12 @@ exprOperators =
 exprTerm :: Parser Expr
 exprTerm =
   parens (parserExpr <|> parserLet)
-  <|> Var <$> name
+  <|> Var <$> identifier
   <|> Lit <$> integer
 
----------------------------- STRUCTURES ----------------------------
+----------------------------- TASK 3-7 -----------------------------
+
+------- Structures
 
 data Action = Creature String Expr
             | Assignment String Expr
@@ -155,11 +148,11 @@ data ActionError = CreatureError String
 instance Show ActionError where
     show :: ActionError -> String
     show (CreatureError name) =
-        "The variable " ++ name ++ " can't be created because it already exists"
+        "The variable \"" ++ name ++ "\" can't be created because it already exists"
     show (AssigmentError name) =
-        "The variable " ++ name ++ " can't be changed because it doesn't exist"
+        "The variable \"" ++ name ++ "\" can't be changed because it doesn't exist"
     show (ReadError name) =
-        "The variable " ++ name ++ " can't be readed because it doesn't exist"
+        "The variable \"" ++ name ++ "\" can't be readed because it doesn't exist"
 
 data InterprError = InterprExprError ExprError Int
                   | InterprActionError ActionError Int
@@ -171,37 +164,40 @@ instance Show InterprError where
     show (InterprActionError err num) =
         show num ++ ": " ++ show err
 
------------------------------- TASK 3 ------------------------------
+------- Fuctions
 
 creature :: String -> Int -> State (M.Map String Int) VerdictAction
-creature name val = eqAction name val False (CreatureError name)
+creature name val = action name val False CreatureError
 
 assignment :: String -> Int -> State (M.Map String Int) VerdictAction
-assignment name val = eqAction name val True (AssigmentError name)
+assignment name val = action name val True AssigmentError
 
-eqAction :: String -> Int -> Bool -> ActionError
+readVar :: String -> State (M.Map String Int) VerdictAction
+readVar = undefined
+
+writeExpr :: Int -> State (M.Map String Int) VerdictAction
+writeExpr = undefined
+
+action :: String -> Int -> Bool -> (String -> ActionError)
              -> State (M.Map String Int) VerdictAction
-eqAction name val mustBeMember err = state $ \m ->
+action name val mustBeMember err = state $ \m ->
     if M.member name m == mustBeMember
     then (Suсcess, M.insert name val m)
-    else (Fail err, m)
+    else (Fail (err name), m)
 
------------------------------- TASK 4 ------------------------------
-
-parserAction :: Parser Action
-parserAction = parserCreature <|> parserAssigment <|> parserRead <|> parserWrite
+------- Parsers
 
 parserCreature :: Parser Action
 parserCreature = do
   rword "mut"
-  var <- name
+  var <- identifier
   symbol "="
   expr <- parserExpr
   return (Creature var expr)
 
 parserAssigment :: Parser Action
 parserAssigment = do
-  var <- name
+  var <- identifier
   symbol "="
   expr <- parserExpr
   return (Assignment var expr)
@@ -209,7 +205,7 @@ parserAssigment = do
 parserRead :: Parser Action
 parserRead = do
   symbol ">"
-  var <- name
+  var <- identifier
   return (Read var)
 
 parserWrite :: Parser Action
@@ -218,14 +214,13 @@ parserWrite = do
   expr <- parserExpr
   return (Write expr)
 
------------------------------- TASK 5 ------------------------------
+parserAction :: Parser Action
+parserAction = parserCreature <|> parserAssigment <|> parserRead <|> parserWrite
+
+------- Interpritation
 
 interpritation :: [Action] -> State (M.Map String Int) ()
 interpritation = undefined
-
------------------------------- TASK 6 ------------------------------
-
------------------------------- TASK 7 ------------------------------
 
 ------------------------------ TASK 8* -----------------------------
 
@@ -233,7 +228,8 @@ interpritation = undefined
 
 ------------------------------ TASK 10 -----------------------------
 
-------------------------------- MAIN -------------------------------
+parserProgram :: Parser [Action]
+parserProgram = many parserAction
 
 main :: IO ()
 main = putStrLn "hw3"
