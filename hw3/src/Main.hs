@@ -95,10 +95,17 @@ parens = between (symbol "(") (symbol ")")
 integer :: Parser Int
 integer = lexeme L.decimal
 
+rws :: [String]
+rws = ["let", "in"]
+
 name :: Parser String
-name = (lexeme . try) (correctName >>= return)
+name = (lexeme . try) (correctName >>= check)
   where
     correctName = (:) <$> letterChar <*> many alphaNumChar
+    check x =
+       if x `elem` rws
+       then fail $ "keyword " ++ show x ++ " cannot be an identifier"
+       else return x
 
 rword :: String -> Parser ()
 rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
@@ -125,11 +132,12 @@ exprOperators =
 
 exprTerm :: Parser Expr
 exprTerm = parens parserExpr
-  <|> parserLet
   <|> Var <$> name
   <|> Lit <$> integer
+  <|> parserLet
+
+------------------------------ TASK 3 ------------------------------
+
+data VarAction = Creature String Int | Assignment String Int
 
 ------------------------------- MAIN -------------------------------
-
-main :: IO ()
-main = undefined
