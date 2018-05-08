@@ -83,7 +83,7 @@ integer :: Parser Int
 integer = lexeme L.decimal
 
 rws :: [String]
-rws = ["let", "in", "mut"]
+rws = ["let", "in", "mut", "for"]
 
 identifier :: Parser String
 identifier = (lexeme . try) (correctName >>= check)
@@ -131,6 +131,7 @@ data Action = Creature String Expr
             | Assignment String Expr
             | Read String
             | Write Expr
+            | For Int [Action]
     deriving Show
 
 data ActionError = CreatureError String
@@ -220,38 +221,91 @@ parserWrite = do
   expr <- parserExpr
   return (Write expr)
 
+parserFor :: Parser Action
+parserFor = do
+  rword "for"
+  symbol "("
+  counterFrom <- integer
+  symbol ","
+  counterTo <- integer
+  symbol ")"
+  symbol "{"
+  actions <- parserProgram
+  symbol "}"
+  return (For (max 0 (counterTo - counterFrom)) actions)
+
 parserAction :: Parser Action
-parserAction = parserCreature <|> parserAssignment <|> parserRead <|> parserWrite
+parserAction =
+    parserCreature
+    <|> parserAssignment
+    <|> parserRead
+    <|> parserWrite
+    <|> parserFor
 
 ------- Interpritation
 
-interpritation :: [Action] -> Int -> (M.Map String Int) -> ExceptT InterprError IO ()
-interpritation [] _ _ = return ()
-interpritation ((Creature name expr) : xs) num st = do
+interpritationFor :: Int -> [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritationFor 0 _ _ = return ()
+interpritationFor rep actions num = do
+    st <- lift $ get
+    eitherInterpr <- lift $ lift $ runStateT (runExceptT (interpritation actions (num + 1))) st
+    case eitherInterpr of
+        (Left errInterpr, newSt) -> throwE errInterpr
+        (Right (), newSt)        -> do
+            lift $ put newSt
+            interpritationFor (rep - 1) actions num
+
+interpritation :: [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritation [] _ = return ()
+interpritation ((Creature name expr) : xs) num = do
+    st <- lift $ get
     case runReader (runExceptT (eval expr)) st of
         Left err -> throwE (InterprExprError err num)
         Right val -> case runState (runExceptT (creature name val)) st of
             (Left err', newSt) -> throwE (InterprActionError err' num)
-            (Right (), newSt)  -> interpritation xs (num + 1) newSt
-interpritation ((Assignment name expr) : xs) num st = do
+            (Right (), newSt)  -> do
+                lift $ put newSt
+                interpritation xs (num + 1)
+
+interpritation ((Assignment name expr) : xs) num = do
+    st <- lift $ get
     case runReader (runExceptT (eval expr)) st of
         Left err -> throwE (InterprExprError err num)
         Right val -> case runState (runExceptT (assignment name val)) st of
             (Left err', newSt) -> throwE (InterprActionError err' num)
-            (Right (), newSt)  -> interpritation xs (num + 1) newSt
-interpritation ((Write expr) : xs) num st = do
+            (Right (), newSt)  -> do
+                lift $ put newSt
+                interpritation xs (num + 1)
+
+interpritation ((Write expr) : xs) num = do
+    st <- lift $ get
     case runReader (runExceptT (eval expr)) st of
         Left err -> throwE (InterprExprError err num)
         Right val -> do
-            eitherWriteExpr <- lift $ runStateT (runExceptT (writeExpr val)) st
+            eitherWriteExpr <- lift $ lift $ runStateT (runExceptT (writeExpr val)) st
             case eitherWriteExpr of
                 (Left err', newSt) -> throwE (InterprActionError err' num)
-                (Right (), newSt)  -> interpritation xs (num + 1) newSt
-interpritation ((Read name) : xs) num st = do
-    eitherReadVar <- lift $ runStateT (runExceptT (readVar name)) st
+                (Right (), newSt)  -> do
+                  lift $ put newSt
+                  interpritation xs (num + 1)
+
+interpritation ((Read name) : xs) num = do
+    st <- lift $ get
+    eitherReadVar <- lift $ lift $ runStateT (runExceptT (readVar name)) st
     case eitherReadVar of
         (Left err', newSt) -> throwE (InterprActionError err' num)
-        (Right (), newSt)  -> interpritation xs (num + 1) newSt
+        (Right (), newSt)  -> do
+          lift $ put newSt
+          interpritation xs (num + 1)
+
+interpritation ((For rep actions) : xs) num = do
+    st <- lift $ get
+    eitherInterprFor <- lift $ lift $ runStateT (runExceptT (interpritationFor rep actions num)) st
+    case eitherInterprFor of
+        (Left errInterpr, newSt) -> throwE errInterpr
+        (Right (), newSt) -> do
+          lift $ put newSt
+          interpritation xs (num + length actions + 2)
 
 ------------------------------ TASK 8* -----------------------------
 
@@ -269,7 +323,7 @@ main = do
     case runParser parserProgram "" code of
         Left err -> putStrLn $ show err
         Right pr -> do
-            eitherInterpr <- runExceptT (interpritation pr 0 (M.fromList []))
+            eitherInterpr <- runStateT (runExceptT (interpritation pr 0)) (M.fromList [])
             case eitherInterpr of
-              Left err' -> putStrLn $ show err'
-              Right ()  -> return ()
+              (Left err', newSt) -> putStrLn $ show err'
+              (Right (), newSt)  -> return ()
