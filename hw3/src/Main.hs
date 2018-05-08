@@ -4,22 +4,26 @@ module Main where
 
 import           Control.Monad              (liftM2)
 import           Control.Monad.Reader       (Reader, ask, local, runReader)
-import           Data.Char                  (isDigit, isLetter, isLower)
+import           Control.Monad.Trans.Class  (lift)
+import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import           Control.Monad.Trans.State  (StateT, get, modify, put,
+                                             runStateT)
+
 import qualified Data.Map                   as M (Map, delete, fromList, insert,
                                                   member, (!))
+import           Data.Void                  (Void)
 
-import           Data.Void
-import           Text.Megaparsec            hiding (State)
-import           Text.Megaparsec.Char
-import qualified Text.Megaparsec.Char.Lexer as L
-import           Text.Megaparsec.Expr
+import           Text.Megaparsec            (Parsec, between, empty, many,
+                                             notFollowedBy, runParser, try,
+                                             (<|>))
+import           Text.Megaparsec.Char       (alphaNumChar, letterChar, space1,
+                                             string)
+import qualified Text.Megaparsec.Char.Lexer as L (decimal, lexeme, space,
+                                                  symbol)
+import           Text.Megaparsec.Error      (parseErrorPretty)
+import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 
-import           Control.Monad.Except
-import           Control.Monad.Reader
-import           Control.Monad.State.Lazy
-import           Control.Monad.Trans.Except (throwE)
--- import           Control.Monad.Trans.Reader
--- import           Control.Monad.Trans.State
+-- parseErrorTextPretty
 
 ------------------------------ TASK 1 ------------------------------
 
@@ -43,12 +47,12 @@ instance Show ExprError where
         ++ name ++ "\" doesn't exist"
 
 eval :: Expr -> ExceptT ExprError (Reader (M.Map String Int)) Int
-eval (Lit x) = return x
-eval (Var v) = do
-  m <- lift ask
-  if not (M.member v m)
-  then throwE (NotEvalError v)
-  else return (m M.! v)
+eval (Lit val) = return val
+eval (Var name) = do
+    m <- lift ask
+    if not (M.member name m)
+    then throwE $ NotEvalError name
+    else return $ m M.! name
 eval (Add l r) = liftM2 (+) (eval l) (eval r)
 eval (Sub l r) = liftM2 (-) (eval l) (eval r)
 eval (Mul l r) = liftM2 (*) (eval l) (eval r)
@@ -90,40 +94,40 @@ identifier = (lexeme . try) (correctName >>= check)
   where
     correctName = (:) <$> letterChar <*> many alphaNumChar
     check x =
-       if x `elem` rws
-       then fail $ "keyword \"" ++ show x ++ "\" can't be a variable name"
-       else return x
+        if x `elem` rws
+        then fail $ "keyword " ++ show x ++ " can't be a variable name"
+        else return x
 
 rword :: String -> Parser ()
 rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 
 parserLet :: Parser Expr
 parserLet = do
-  rword "let"
-  varName <- identifier
-  symbol "="
-  eqExpr <- parserExpr
-  rword "in"
-  inExpr <- parserExpr
-  return (Let varName eqExpr inExpr)
+    rword "let"
+    varName <- identifier
+    symbol "="
+    eqExpr <- parserExpr
+    rword "in"
+    inExpr <- parserExpr
+    return $ Let varName eqExpr inExpr
 
 parserExpr :: Parser Expr
 parserExpr = makeExprParser exprTerm exprOperators
 
 exprOperators :: [[Operator Parser Expr]]
 exprOperators =
-  [ [ InfixL (Mul <$ symbol "*")
-    , InfixL (Div <$ symbol "/") ]
-  , [ InfixL (Add <$ symbol "+")
-    , InfixL (Sub <$ symbol "-") ] ]
+    [ [ InfixL (Mul <$ symbol "*")
+      , InfixL (Div <$ symbol "/") ]
+    , [ InfixL (Add <$ symbol "+")
+      , InfixL (Sub <$ symbol "-") ] ]
 
 exprTerm :: Parser Expr
 exprTerm =
-  parens (parserExpr <|> parserLet)
-  <|> Var <$> identifier
-  <|> Lit <$> integer
+    parens (parserExpr <|> parserLet)
+    <|> Var <$> identifier
+    <|> Lit <$> integer
 
------------------------------ TASK 3-7 -----------------------------
+----------------------------- TASKS 3-8 ----------------------------
 
 ------- Structures
 
@@ -153,9 +157,9 @@ data InterprError = InterprExprError ExprError Int
 instance Show InterprError where
     show :: InterprError -> String
     show (InterprExprError err num) =
-        show num ++ ": " ++ show err
+        "(" ++ show num ++ "): " ++ show err
     show (InterprActionError err num) =
-        show num ++ ": " ++ show err
+        "(" ++ show num ++ "): " ++ show err
 
 ------- Functions
 
@@ -187,43 +191,43 @@ writeExpr val num = lift $ lift $ putStrLn (show val)
 
 parserCreature :: Parser Action
 parserCreature = do
-  rword "mut"
-  varName <- identifier
-  symbol "="
-  expr <- parserExpr
-  return (Creature varName expr)
+    rword "mut"
+    varName <- identifier
+    symbol "="
+    expr <- parserExpr
+    return $ Creature varName expr
 
 parserAssignment :: Parser Action
 parserAssignment = do
-  varName <- identifier
-  symbol "="
-  expr <- parserExpr
-  return (Assignment varName expr)
+    varName <- identifier
+    symbol "="
+    expr <- parserExpr
+    return $ Assignment varName expr
 
 parserRead :: Parser Action
 parserRead = do
-  symbol ">"
-  varName <- identifier
-  return (Read varName)
+    symbol ">"
+    varName <- identifier
+    return $ Read varName
 
 parserWrite :: Parser Action
 parserWrite = do
-  symbol "<"
-  expr <- parserExpr
-  return (Write expr)
+    symbol "<"
+    expr <- parserExpr
+    return $ Write expr
 
 parserFor :: Parser Action
 parserFor = do
-  rword "for"
-  symbol "("
-  counterFrom <- integer
-  symbol ","
-  counterTo <- integer
-  symbol ")"
-  symbol "{"
-  actions <- parserProgram
-  symbol "}"
-  return (For (max 0 (counterTo - counterFrom)) actions)
+    rword "for"
+    symbol "("
+    counterFrom <- integer
+    symbol ","
+    counterTo <- integer
+    symbol ")"
+    symbol "{"
+    actions <- parserProgram
+    symbol "}"
+    return $ For (max 0 (counterTo - counterFrom)) actions
 
 parserAction :: Parser Action
 parserAction =
@@ -232,6 +236,9 @@ parserAction =
     <|> parserRead
     <|> parserWrite
     <|> parserFor
+
+parserProgram :: Parser [Action]
+parserProgram = many parserAction
 
 ------- Interpritation
 
@@ -243,46 +250,39 @@ interpritationFor rep actions num = do
 
 interpritationWithCalcExpr :: [Action] -> Expr -> (Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ())
                               -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-interpritationWithCalcExpr nextActs expr varAction num = do
+interpritationWithCalcExpr nextActions expr varAction num = do
     st <- lift $ get
     case runReader (runExceptT (eval expr)) st of
-        Left err -> throwE (InterprExprError err num)
+        Left err -> throwE $ InterprExprError err num
         Right val -> do
             varAction val num
-            interpritation nextActs (num + 1)
+            interpritation nextActions (num + 1)
 
 interpritation :: [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 interpritation [] _ = return ()
-interpritation ((Creature name expr) : nextActs) num =
-    interpritationWithCalcExpr nextActs expr (creature name) num
-interpritation ((Assignment name expr) : nextActs) num =
-    interpritationWithCalcExpr nextActs expr (assignment name) num
-interpritation ((Write expr) : nextActs) num =
-    interpritationWithCalcExpr nextActs expr writeExpr num
-interpritation ((Read name) : nextActs) num = do
+interpritation ((Creature name expr) : nextActions) num =
+    interpritationWithCalcExpr nextActions expr (creature name) num
+interpritation ((Assignment name expr) : nextActions) num =
+    interpritationWithCalcExpr nextActions expr (assignment name) num
+interpritation ((Write expr) : nextActions) num =
+    interpritationWithCalcExpr nextActions expr writeExpr num
+interpritation ((Read name) : nextActions) num = do
     readVar name num
-    interpritation nextActs (num + 1)
-interpritation ((For rep actions) : nextActs) num = do
+    interpritation nextActions (num + 1)
+interpritation ((For rep actions) : nextActions) num = do
     interpritationFor rep actions num
-    interpritation nextActs (num + length actions + 2)
-
------------------------------- TASK 8* -----------------------------
-
------------------------------- TASK 9* -----------------------------
+    interpritation nextActions (num + length actions + 2)
 
 ------------------------------ TASK 10 -----------------------------
-
-parserProgram :: Parser [Action]
-parserProgram = many parserAction
 
 main :: IO ()
 main = do
     path <- getLine
     code <- readFile path
     case runParser parserProgram "" code of
-        Left err -> putStrLn $ show err
-        Right pr -> do
-            eitherInterpr <- runStateT (runExceptT (interpritation pr 1)) (M.fromList [])
+        Left parseErr -> putStr $ parseErrorPretty parseErr
+        Right prog -> do
+            eitherInterpr <- runStateT (runExceptT (interpritation prog 1)) (M.fromList [])
             case eitherInterpr of
-              (Left err', newSt) -> putStrLn $ show err'
-              (Right (), newSt)  -> return ()
+                (Left interprErr, newSt) -> putStrLn $ show interprErr
+                (Right (), newSt)        -> return ()
