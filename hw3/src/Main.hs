@@ -159,6 +159,9 @@ instance Show InterprError where
 
 ------- Functions
 
+-- varActionWithExcept :: Int -> Bool -> (String -> ActionError) -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+
+
 creature :: String -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 creature name val num = do
   m <- lift get
@@ -249,39 +252,30 @@ interpritationFor rep actions num = do
     interpritation actions (num + 1)
     interpritationFor (rep - 1) actions num
 
+interpritationWithCalcExpr :: [Action] -> Expr -> (Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ())
+                              -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritationWithCalcExpr nextActs expr varAction num = do
+    st <- lift $ get
+    case runReader (runExceptT (eval expr)) st of
+        Left err -> throwE (InterprExprError err num)
+        Right val -> do
+            varAction val num
+            interpritation nextActs (num + 1)
+
 interpritation :: [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 interpritation [] _ = return ()
-interpritation ((Creature name expr) : xs) num = do
-    st <- lift $ get
-    case runReader (runExceptT (eval expr)) st of
-        Left err -> throwE (InterprExprError err num)
-        Right val -> do
-            creature name val num
-            interpritation xs (num + 1)
-
-interpritation ((Assignment name expr) : xs) num = do
-    st <- lift $ get
-    case runReader (runExceptT (eval expr)) st of
-        Left err -> throwE (InterprExprError err num)
-        Right val -> do
-            assignment name val num
-            interpritation xs (num + 1)
-
-interpritation ((Write expr) : xs) num = do
-    st <- lift $ get
-    case runReader (runExceptT (eval expr)) st of
-        Left err -> throwE (InterprExprError err num)
-        Right val -> do
-            writeExpr val num
-            interpritation xs (num + 1)
-
-interpritation ((Read name) : xs) num = do
+interpritation ((Creature name expr) : nextActs) num =
+    interpritationWithCalcExpr nextActs expr (creature name) num
+interpritation ((Assignment name expr) : nextActs) num =
+    interpritationWithCalcExpr nextActs expr (assignment name) num
+interpritation ((Write expr) : nextActs) num =
+    interpritationWithCalcExpr nextActs expr writeExpr num
+interpritation ((Read name) : nextActs) num = do
     readVar name num
-    interpritation xs (num + 1)
-
-interpritation ((For rep actions) : xs) num = do
+    interpritation nextActs (num + 1)
+interpritation ((For rep actions) : nextActs) num = do
     interpritationFor rep actions num
-    interpritation xs (num + length actions + 2)
+    interpritation nextActs (num + length actions + 2)
 
 ------------------------------ TASK 8* -----------------------------
 
