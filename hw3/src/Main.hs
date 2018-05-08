@@ -100,12 +100,12 @@ rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 parserLet :: Parser Expr
 parserLet = do
   rword "let"
-  var <- identifier
+  varName <- identifier
   symbol "="
   eqExpr <- parserExpr
   rword "in"
   inExpr <- parserExpr
-  return (Let var eqExpr inExpr)
+  return (Let varName eqExpr inExpr)
 
 parserExpr :: Parser Expr
 parserExpr = makeExprParser exprTerm exprOperators
@@ -196,23 +196,23 @@ readVar name = do
 parserCreature :: Parser Action
 parserCreature = do
   rword "mut"
-  var <- identifier
+  varName <- identifier
   symbol "="
   expr <- parserExpr
-  return (Creature var expr)
+  return (Creature varName expr)
 
 parserAssignment :: Parser Action
 parserAssignment = do
-  var <- identifier
+  varName <- identifier
   symbol "="
   expr <- parserExpr
-  return (Assignment var expr)
+  return (Assignment varName expr)
 
 parserRead :: Parser Action
 parserRead = do
   symbol ">"
-  var <- identifier
-  return (Read var)
+  varName <- identifier
+  return (Read varName)
 
 parserWrite :: Parser Action
 parserWrite = do
@@ -225,8 +225,33 @@ parserAction = parserCreature <|> parserAssignment <|> parserRead <|> parserWrit
 
 ------- Interpritation
 
-interpritation :: [Action] -> IO ()
-interpritation actions = undefined
+interpritation :: [Action] -> Int -> (M.Map String Int) -> ExceptT InterprError IO ()
+interpritation [] _ _ = return ()
+interpritation ((Creature name expr) : xs) num st = do
+    case runReader (runExceptT (eval expr)) st of
+        Left err -> throwE (InterprExprError err num)
+        Right val -> case runState (runExceptT (creature name val)) st of
+            (Left err', newSt) -> throwE (InterprActionError err' num)
+            (Right (), newSt)  -> interpritation xs (num + 1) newSt
+interpritation ((Assignment name expr) : xs) num st = do
+    case runReader (runExceptT (eval expr)) st of
+        Left err -> throwE (InterprExprError err num)
+        Right val -> case runState (runExceptT (assignment name val)) st of
+            (Left err', newSt) -> throwE (InterprActionError err' num)
+            (Right (), newSt)  -> interpritation xs (num + 1) newSt
+interpritation ((Write expr) : xs) num st = do
+    case runReader (runExceptT (eval expr)) st of
+        Left err -> throwE (InterprExprError err num)
+        Right val -> do
+            eitherWriteExpr <- lift $ runStateT (runExceptT (writeExpr val)) st
+            case eitherWriteExpr of
+                (Left err', newSt) -> throwE (InterprActionError err' num)
+                (Right (), newSt)  -> interpritation xs (num + 1) newSt
+interpritation ((Read name) : xs) num st = do
+    eitherReadVar <- lift $ runStateT (runExceptT (readVar name)) st
+    case eitherReadVar of
+        (Left err', newSt) -> throwE (InterprActionError err' num)
+        (Right (), newSt)  -> interpritation xs (num + 1) newSt
 
 ------------------------------ TASK 8* -----------------------------
 
@@ -242,5 +267,9 @@ main = do
     path <- getLine
     code <- readFile path
     case runParser parserProgram "" code of
-        Right pr -> interpritation pr
         Left err -> putStrLn $ show err
+        Right pr -> do
+            eitherInterpr <- runExceptT (interpritation pr 0 (M.fromList []))
+            case eitherInterpr of
+              Left err' -> putStrLn $ show err'
+              Right ()  -> return ()
