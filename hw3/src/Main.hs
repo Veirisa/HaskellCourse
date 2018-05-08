@@ -159,40 +159,29 @@ instance Show InterprError where
 
 ------- Functions
 
--- varActionWithExcept :: Int -> Bool -> (String -> ActionError) -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-
+varActionWithExcept :: String -> Int -> Bool -> (String -> ActionError) -> Int
+                       -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+varActionWithExcept name val mustBeMember constrError num = do
+    m <- lift get
+    if M.member name m == mustBeMember
+    then do
+        lift $ modify (M.insert name val)
+        return ()
+    else throwE $ InterprActionError (constrError name) num
 
 creature :: String -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-creature name val num = do
-  m <- lift get
-  if not (M.member name m)
-  then do
-      lift $ modify (M.insert name val)
-      return ()
-  else throwE $ InterprActionError (CreatureError name) num
+creature name val num = varActionWithExcept name val False CreatureError num
 
 assignment :: String -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-assignment name val num = do
-  m <- lift get
-  if M.member name m
-  then do
-      lift $ modify (M.insert name val)
-      return ()
-  else throwE $ InterprActionError (AssignmentError name) num
-
-writeExpr :: Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-writeExpr val num = do
-    lift $ lift $ putStrLn (show val)
+assignment name val num = varActionWithExcept name val True AssignmentError num
 
 readVar :: String -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 readVar name num = do
-    m <- lift get
     valStr <- lift $ lift $ getLine
-    if M.member name m
-    then do
-        lift $ modify (M.insert name (read valStr))
-        return ()
-    else throwE $ InterprActionError (ReadError name) num
+    varActionWithExcept name (read valStr) True ReadError num
+
+writeExpr :: Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+writeExpr val num = lift $ lift $ putStrLn (show val)
 
 ------- Parsers
 
