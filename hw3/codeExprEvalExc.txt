@@ -1,0 +1,8 @@
+mut i = 0
+> i
+mut k = 0
+> k
+mut p = 0
+for (i from 1 to 5) {
+    p = p + k - fail
+}

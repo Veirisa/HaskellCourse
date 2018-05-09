@@ -1,0 +1,17 @@
+mut n = 0
+> n
+mut i = 0
+mut fact = 1
+for (i from 1 to n + 1) {
+    fact = fact * i
+}
+< fact
+mut fib1 = 0
+mut fib2 = 1
+mut fibSum = 0
+for (i from 1 to n) {
+    fibSum = fib1 + fib2
+    fib1 = fib2
+    fib2 = fibSum
+}
+< fibSum

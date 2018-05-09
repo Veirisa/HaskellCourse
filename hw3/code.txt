@@ -1,0 +1,17 @@
+mut x = 1
+< x + 3 * (let x = 2 in x)
+> x
+mut y = 2 * x + 1
+mut i = 0
+mut j = i
+for (i from 1 to (let z = y - x in z / 2)) {
+    < i + 1
+    for (j from 0 to i + 4) {
+        y = x * (let t = 10 in (i + j) * (i - j)) / 2
+        j = j + 2
+    }
+    < y
+}
+mut n = 15 + x - 2 * (7 - y)
+< n - y
+> n

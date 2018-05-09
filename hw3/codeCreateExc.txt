@@ -1,0 +1,12 @@
+mut i = 0
+mut j = 0
+mut res = 0
+mut predRes = 0
+for (i from 1 to 5) {
+    for (j from 1 to 3) {
+        predRes = res
+        res = res + 1
+    }
+}
+mut res = predRes + 1
+< res

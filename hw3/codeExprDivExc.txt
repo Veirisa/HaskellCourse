@@ -1,0 +1,4 @@
+mut n = 0
+> n
+mut x = 1
+< x + 3 * (let x = 2 / (n - n) in x)

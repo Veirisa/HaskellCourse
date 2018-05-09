@@ -1,0 +1,7 @@
+mut i = 0
+> i
+mut p = 0
+> k
+for (i from 1 to 5) {
+    p = p + k
+}

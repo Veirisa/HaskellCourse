@@ -10,7 +10,7 @@ import           Control.Monad.Trans.State  (StateT, get, modify, put,
                                              runStateT)
 
 import qualified Data.Map                   as M (Map, delete, fromList, insert,
-                                                  member, (!))
+                                                  lookup, member, (!))
 import           Data.Void                  (Void)
 
 import           Text.Megaparsec            (Parsec, between, empty, many,
@@ -167,11 +167,9 @@ varActionWithExcept :: String -> Int -> Bool -> (String -> ActionError) -> Int
                        -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 varActionWithExcept name val mustBeMember constrError num = do
     m <- lift get
-    if M.member name m == mustBeMember
-    then do
-        lift $ modify (M.insert name val)
-        return ()
-    else throwE $ InterprActionError (constrError name) num
+    if not (M.member name m == mustBeMember)
+    then throwE $ InterprActionError (constrError name) num
+    else lift $ modify (M.insert name val)
 
 creature :: String -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 creature name val num = varActionWithExcept name val False CreatureError num
@@ -220,7 +218,6 @@ parserFor :: Parser Action
 parserFor = do
     rword "for"
     symbol "("
-    rword "mut"
     varName <- identifier
     rword "from"
     fromExpr <- parserExpr
@@ -246,12 +243,17 @@ parserProgram = many parserAction
 ------- Interpritation
 
 interpritationFor :: [Action] -> String -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-interpritationFor actions name rep num
-    | rep <= 0 = return ()
-    | otherwise = do
-        interpritation actions (num + 1)
-        interpritationWithOneCalcExpr [] (Add (Var name) (Lit 1)) (assignment name) num
-        interpritationFor actions name (rep - 1) num
+interpritationFor actions name toVal num = do
+    m <- lift get
+    case M.lookup name m of
+        Nothing -> throwE $ InterprActionError (AssignmentError name) num
+        Just curVal ->
+            if curVal >= toVal
+            then return ()
+            else do
+                interpritation actions (num + 1)
+                interpritationWithOneCalcExpr [] (Add (Var name) (Lit 1)) (assignment name) num
+                interpritationFor actions name toVal num
 
 interpritationWithOneCalcExpr :: [Action] -> Expr -> (Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ())
                               -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
@@ -282,8 +284,8 @@ interpritation ((For name fromExpr toExpr actions) : nextActions) num = do
             case runReader (runExceptT (eval toExpr)) st of
                 Left err' -> throwE $ InterprExprError err' num
                 Right toVal -> do
-                    creature name fromVal num
-                    interpritationFor actions name (toVal - fromVal) num
+                    assignment name fromVal num
+                    interpritationFor actions name toVal num
                     interpritation nextActions (num + length actions + 2)
 
 ------------------------------ TASK 10 -----------------------------
