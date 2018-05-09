@@ -1,9 +1,16 @@
-{-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE InstanceSigs               #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 module Main where
 
 import           Control.Monad              (liftM2)
-import           Control.Monad.Reader       (Reader, ask, local, runReader)
+import           Control.Monad.Except       (MonadError, throwError)
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Control.Monad.Reader       (MonadReader, Reader, ask, local,
+                                             runReader)
+import           Control.Monad.State        (MonadState)
 import           Control.Monad.Trans.Class  (lift)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
 import           Control.Monad.Trans.State  (StateT, get, modify, put,
@@ -46,12 +53,15 @@ instance Show ExprError where
         = "The expression can't be fully evaluated because variable \""
         ++ name ++ "\" doesn't exist"
 
-eval :: Expr -> ExceptT ExprError (Reader (M.Map String Int)) Int
+eval :: ( MonadError ExprError m
+        , MonadReader (M.Map String Int) m
+        )
+    => Expr -> m Int
 eval (Lit val) = return val
 eval (Var name) = do
-    m <- lift ask
+    m <- ask
     if not (M.member name m)
-    then throwE $ NotEvalError name
+    then throwError $ NotEvalError name
     else return $ m M.! name
 eval (Add l r) = liftM2 (+) (eval l) (eval r)
 eval (Sub l r) = liftM2 (-) (eval l) (eval r)
@@ -59,7 +69,7 @@ eval (Mul l r) = liftM2 (*) (eval l) (eval r)
 eval (Div l r) = do
     rCalced <- eval r
     if rCalced == 0
-    then throwE DivError
+    then throwError DivError
     else do
         lCalced <- eval l
         return $ div lCalced rCalced
