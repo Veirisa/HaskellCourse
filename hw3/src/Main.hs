@@ -87,7 +87,7 @@ integer :: Parser Int
 integer = lexeme L.decimal
 
 rws :: [String]
-rws = ["let", "in", "mut", "for"]
+rws = ["let", "in", "mut", "for", "from", "to"]
 
 identifier :: Parser String
 identifier = (lexeme . try) (correctName >>= check)
@@ -135,7 +135,7 @@ data Action = Creature String Expr
             | Assignment String Expr
             | Read String
             | Write Expr
-            | For Expr [Action]
+            | For String Expr Expr [Action]
     deriving Show
 
 data ActionError = CreatureError String
@@ -220,14 +220,17 @@ parserFor :: Parser Action
 parserFor = do
     rword "for"
     symbol "("
-    counterFrom <- parserExpr
-    symbol ","
-    counterTo <- parserExpr
+    rword "mut"
+    varName <- identifier
+    rword "from"
+    fromExpr <- parserExpr
+    rword "to"
+    toExpr <- parserExpr
     symbol ")"
     symbol "{"
     actions <- parserProgram
     symbol "}"
-    return $ For (Sub counterTo counterFrom) actions
+    return $ For varName fromExpr toExpr actions
 
 parserAction :: Parser Action
 parserAction =
@@ -242,37 +245,46 @@ parserProgram = many parserAction
 
 ------- Interpritation
 
-interpritationFor :: [Action] -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-interpritationFor actions rep num
+interpritationFor :: [Action] -> String -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritationFor actions name rep num
     | rep <= 0 = return ()
     | otherwise = do
         interpritation actions (num + 1)
-        interpritationFor actions (rep - 1) num
+        interpritationWithOneCalcExpr [] (Add (Var name) (Lit 1)) (assignment name) num
+        interpritationFor actions name (rep - 1) num
 
-interpritationWithCalcExpr :: [Action] -> Expr -> (Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ())
-                              -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-interpritationWithCalcExpr nextActions expr varAction num nextNum= do
+interpritationWithOneCalcExpr :: [Action] -> Expr -> (Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ())
+                              -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritationWithOneCalcExpr nextActions expr varAction num = do
     st <- lift $ get
     case runReader (runExceptT (eval expr)) st of
         Left err -> throwE $ InterprExprError err num
         Right val -> do
             varAction val num
-            interpritation nextActions nextNum
+            interpritation nextActions (num + 1)
 
 interpritation :: [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 interpritation [] _ = return ()
 interpritation ((Creature name expr) : nextActions) num =
-    interpritationWithCalcExpr nextActions expr (creature name) num (num + 1)
+    interpritationWithOneCalcExpr nextActions expr (creature name) num
 interpritation ((Assignment name expr) : nextActions) num =
-    interpritationWithCalcExpr nextActions expr (assignment name) num (num + 1)
+    interpritationWithOneCalcExpr nextActions expr (assignment name) num
 interpritation ((Write expr) : nextActions) num =
-    interpritationWithCalcExpr nextActions expr writeExpr num (num + 1)
+    interpritationWithOneCalcExpr nextActions expr writeExpr num
 interpritation ((Read name) : nextActions) num = do
     readVar name num
     interpritation nextActions (num + 1)
-interpritation ((For expr actions) : nextActions) num = do
-    let nextNum = num + length actions + 2
-    interpritationWithCalcExpr nextActions expr (interpritationFor actions) num nextNum
+interpritation ((For name fromExpr toExpr actions) : nextActions) num = do
+    st <- lift $ get
+    case runReader (runExceptT (eval fromExpr)) st of
+        Left err -> throwE $ InterprExprError err num
+        Right fromVal ->
+            case runReader (runExceptT (eval toExpr)) st of
+                Left err' -> throwE $ InterprExprError err' num
+                Right toVal -> do
+                    creature name fromVal num
+                    interpritationFor actions name (toVal - fromVal) num
+                    interpritation nextActions (num + length actions + 2)
 
 ------------------------------ TASK 10 -----------------------------
 
