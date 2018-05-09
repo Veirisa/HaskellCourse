@@ -7,11 +7,9 @@ module Main where
 import           Control.Monad              (liftM2)
 import           Control.Monad.Except       (MonadError, throwError)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
-import           Control.Monad.Reader       (MonadReader, Reader, ask, local,
-                                             runReader)
+import           Control.Monad.Reader       (MonadReader, ask, local, runReader)
 import           Control.Monad.State        (MonadState, get, modify, put)
-import           Control.Monad.Trans.Class  (lift)
-import           Control.Monad.Trans.Except (ExceptT, runExceptT, throwE)
+import           Control.Monad.Trans.Except (ExceptT, runExceptT)
 import           Control.Monad.Trans.State  (StateT, runStateT)
 
 import qualified Data.Map                   as M (Map, delete, fromList, insert,
@@ -42,14 +40,13 @@ data Expr = Lit Int
     deriving Show
 
 data ExprError = DivError | NotEvalError String
-    deriving Eq
 
 instance Show ExprError where
     show :: ExprError -> String
     show DivError = "The expression contains division by 0"
     show (NotEvalError name)
         = "The expression can't be fully evaluated because variable \""
-        ++ name ++ "\" doesn't exist"
+          ++ name ++ "\" doesn't exist"
 
 eval :: ( MonadError ExprError m
         , MonadReader (M.Map String Int) m
@@ -181,7 +178,7 @@ type InteprConstraint m =
 
 ------- Functions
 
-varActionWithExcept :: (InteprConstraintWithoutIO m)
+varActionWithExcept :: InteprConstraintWithoutIO m
     => String -> Int -> Bool -> (String -> ActionError) -> Int -> m ()
 varActionWithExcept name val mustBeMember constrError num = do
     m <- get
@@ -189,21 +186,21 @@ varActionWithExcept name val mustBeMember constrError num = do
     then throwError $  InterprActionError (constrError name) num
     else modify (M.insert name val)
 
-creature :: (InteprConstraintWithoutIO m)
+creature :: InteprConstraintWithoutIO m
     => String -> Int -> Int -> m ()
 creature name val num = varActionWithExcept name val False CreatureError num
 
-assignment :: (InteprConstraintWithoutIO m)
+assignment :: InteprConstraintWithoutIO m
     => String -> Int -> Int -> m ()
 assignment name val num = varActionWithExcept name val True AssignmentError num
 
-readVar :: (InteprConstraint m)
+readVar :: InteprConstraint m
     => String -> Int -> m ()
 readVar name num = do
     valStr <- liftIO $ getLine
     varActionWithExcept name (read valStr) True ReadError num
 
-writeExpr :: (InteprConstraint m)
+writeExpr :: InteprConstraint m
     => Int -> Int -> m ()
 writeExpr val num = liftIO $ putStrLn (show val)
 
@@ -264,7 +261,7 @@ parserProgram = many parserAction
 
 ------- Interpritation
 
-interpritationFor :: (InteprConstraint m)
+interpritationFor :: InteprConstraint m
     => [Action] -> String -> Int -> Int -> m ()
 interpritationFor actions name toVal num = do
     m <- get
@@ -278,7 +275,7 @@ interpritationFor actions name toVal num = do
                 interpritationWithOneCalcExpr [] (Add (Var name) (Lit 1)) (assignment name) num
                 interpritationFor actions name toVal num
 
-interpritationWithOneCalcExpr :: (InteprConstraint m)
+interpritationWithOneCalcExpr :: InteprConstraint m
     => [Action] -> Expr -> (Int -> Int -> m ()) -> Int -> m ()
 interpritationWithOneCalcExpr nextActions expr varAction num = do
     st <- get
@@ -288,7 +285,7 @@ interpritationWithOneCalcExpr nextActions expr varAction num = do
             varAction val num
             interpritation nextActions (num + 1)
 
-interpritation :: (InteprConstraint m)
+interpritation :: InteprConstraint m
     => [Action] -> Int -> m ()
 interpritation [] _ = return ()
 interpritation ((Creature name expr) : nextActions) num =
