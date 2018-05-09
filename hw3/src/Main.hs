@@ -135,7 +135,7 @@ data Action = Creature String Expr
             | Assignment String Expr
             | Read String
             | Write Expr
-            | For Int [Action]
+            | For Expr [Action]
     deriving Show
 
 data ActionError = CreatureError String
@@ -220,14 +220,14 @@ parserFor :: Parser Action
 parserFor = do
     rword "for"
     symbol "("
-    counterFrom <- integer
+    counterFrom <- parserExpr
     symbol ","
-    counterTo <- integer
+    counterTo <- parserExpr
     symbol ")"
     symbol "{"
     actions <- parserProgram
     symbol "}"
-    return $ For (max 0 (counterTo - counterFrom)) actions
+    return $ For (Sub counterTo counterFrom) actions
 
 parserAction :: Parser Action
 parserAction =
@@ -242,36 +242,37 @@ parserProgram = many parserAction
 
 ------- Interpritation
 
-interpritationFor :: Int -> [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-interpritationFor 0 _ _ = return ()
-interpritationFor rep actions num = do
-    interpritation actions (num + 1)
-    interpritationFor (rep - 1) actions num
+interpritationFor :: [Action] -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritationFor actions rep num
+    | rep <= 0 = return ()
+    | otherwise = do
+        interpritation actions (num + 1)
+        interpritationFor actions (rep - 1) num
 
 interpritationWithCalcExpr :: [Action] -> Expr -> (Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ())
-                              -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
-interpritationWithCalcExpr nextActions expr varAction num = do
+                              -> Int -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
+interpritationWithCalcExpr nextActions expr varAction num nextNum= do
     st <- lift $ get
     case runReader (runExceptT (eval expr)) st of
         Left err -> throwE $ InterprExprError err num
         Right val -> do
             varAction val num
-            interpritation nextActions (num + 1)
+            interpritation nextActions nextNum
 
 interpritation :: [Action] -> Int -> ExceptT InterprError (StateT (M.Map String Int) IO) ()
 interpritation [] _ = return ()
 interpritation ((Creature name expr) : nextActions) num =
-    interpritationWithCalcExpr nextActions expr (creature name) num
+    interpritationWithCalcExpr nextActions expr (creature name) num (num + 1)
 interpritation ((Assignment name expr) : nextActions) num =
-    interpritationWithCalcExpr nextActions expr (assignment name) num
+    interpritationWithCalcExpr nextActions expr (assignment name) num (num + 1)
 interpritation ((Write expr) : nextActions) num =
-    interpritationWithCalcExpr nextActions expr writeExpr num
+    interpritationWithCalcExpr nextActions expr writeExpr num (num + 1)
 interpritation ((Read name) : nextActions) num = do
     readVar name num
     interpritation nextActions (num + 1)
-interpritation ((For rep actions) : nextActions) num = do
-    interpritationFor rep actions num
-    interpritation nextActions (num + length actions + 2)
+interpritation ((For expr actions) : nextActions) num = do
+    let nextNum = num + length actions + 2
+    interpritationWithCalcExpr nextActions expr (interpritationFor actions) num nextNum
 
 ------------------------------ TASK 10 -----------------------------
 
