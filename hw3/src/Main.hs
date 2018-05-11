@@ -7,9 +7,10 @@ module Main where
 import           Control.Monad              (liftM2)
 import           Control.Monad.Except       (MonadError, throwError)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
-import           Control.Monad.Reader       (MonadReader, ask, local, runReader)
+import           Control.Monad.Reader       (MonadReader, ask, local)
 import           Control.Monad.State        (MonadState, get, modify, put)
 import           Control.Monad.Trans.Except (ExceptT, runExceptT)
+import           Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import           Control.Monad.Trans.State  (StateT, runStateT)
 
 import qualified Data.Map                   as M (Map, delete, fromList, insert,
@@ -48,15 +49,15 @@ instance Show ExprError where
         = "The expression can't be fully evaluated because variable \""
           ++ name ++ "\" doesn't exist"
 
-eval :: ( MonadError ExprError m
-        , MonadReader (M.Map String Int) m
+eval :: ( MonadError InterprError m
+        , MonadReader (M.Map String Int, Int) m
         )
     => Expr -> m Int
 eval (Lit val) = return val
 eval (Var name) = do
-    m <- ask
+    (m, num) <- ask
     case M.lookup name m of
-        Nothing  -> throwError $ NotEvalError name
+        Nothing  -> throwError  $ InterprExprError (NotEvalError name) num
         Just val -> return val
 eval (Add l r) = liftM2 (+) (eval l) (eval r)
 eval (Sub l r) = liftM2 (-) (eval l) (eval r)
@@ -64,13 +65,15 @@ eval (Mul l r) = liftM2 (*) (eval l) (eval r)
 eval (Div l r) = do
     rCalced <- eval r
     if rCalced == 0
-    then throwError DivError
+    then do
+        (m, num) <- ask
+        throwError $ InterprExprError DivError num
     else do
         lCalced <- eval l
         return $ div lCalced rCalced
 eval (Let v eqExpr inExpr) = do
     eqExprCalced <- eval eqExpr
-    local (M.insert v eqExprCalced) (eval inExpr)
+    local (\(m, num) -> (M.insert v eqExprCalced m, num)) (eval inExpr)
 
 ------------------------------ TASK 2 ------------------------------
 
@@ -168,7 +171,7 @@ instance Show InterprError where
 
 type InteprConstraintWithoutIO m =
     ( MonadError InterprError m
-    , MonadState (M.Map String Int) m
+    , MonadState (M.Map String Int, Int) m
     )
 
 type InteprConstraint m =
@@ -179,30 +182,32 @@ type InteprConstraint m =
 ------- Functions
 
 varActionWithExcept :: InteprConstraintWithoutIO m
-    => String -> Int -> Bool -> (String -> ActionError) -> Int -> m ()
-varActionWithExcept name val mustBeMember constrError num = do
-    m <- get
+    => String -> Int -> Bool -> (String -> ActionError) -> m ()
+varActionWithExcept name val mustBeMember constrError = do
+    (m, num) <- get
     if not (M.member name m == mustBeMember)
-    then throwError $  InterprActionError (constrError name) num
-    else modify (M.insert name val)
+    then throwError $ InterprActionError (constrError name) num
+    else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
 creature :: InteprConstraintWithoutIO m
-    => String -> Int -> Int -> m ()
-creature name val num = varActionWithExcept name val False CreatureError num
+    => String -> Int -> m ()
+creature name val = varActionWithExcept name val False CreatureError
 
 assignment :: InteprConstraintWithoutIO m
-    => String -> Int -> Int -> m ()
-assignment name val num = varActionWithExcept name val True AssignmentError num
+    => String -> Int -> m ()
+assignment name val = varActionWithExcept name val True AssignmentError
 
 readVar :: InteprConstraint m
-    => String -> Int -> m ()
-readVar name num = do
+    => String -> m ()
+readVar name= do
     valStr <- liftIO $ getLine
-    varActionWithExcept name (read valStr) True ReadError num
+    varActionWithExcept name (read valStr) True ReadError
 
 writeExpr :: InteprConstraint m
-    => Int -> Int -> m ()
-writeExpr val num = liftIO $ putStrLn (show val)
+    => Int  -> m ()
+writeExpr val = do
+    liftIO $ putStrLn (show val)
+    modify $ \(curM, curNum) -> (curM, curNum + 1)
 
 ------- Parsers
 
@@ -261,53 +266,55 @@ parserProgram = many parserAction
 
 ------- Interpritation
 
+getActionLength :: Action -> Int
+getActionLength (For _ _ _ actions) = 2 + getActionsLength actions
+getActionLength _                   = 1
+
+getActionsLength :: [Action] -> Int
+getActionsLength actions = sum $ map getActionLength actions
+
 interpritationFor :: InteprConstraint m
-    => [Action] -> String -> Int -> Int -> m ()
-interpritationFor actions name toVal num = do
-    m <- get
+    => [Action] -> String -> Int -> m ()
+interpritationFor actions name toVal = do
+    (m, num) <- get
     case M.lookup name m of
         Nothing -> throwError $ InterprActionError (AssignmentError name) num
         Just curVal ->
             if curVal >= toVal
-            then return ()
+            then
+                modify $ \(curM, curNum) -> (curM, curNum + getActionsLength actions + 1)
             else do
-                interpritation actions (num + 1)
-                interpritationWithOneCalcExpr [] (Add (Var name) (Lit 1)) (assignment name) num
-                interpritationFor actions name toVal num
+                fullInterpritation actions
+                interpritationWithOneExpr (Add (Var name) (Lit 1)) (assignment name)
+                modify $ \(curM, curNum) -> (curM, num)
+                interpritationFor actions name toVal
 
-interpritationWithOneCalcExpr :: InteprConstraint m
-    => [Action] -> Expr -> (Int -> Int -> m ()) -> Int -> m ()
-interpritationWithOneCalcExpr nextActions expr varAction num = do
+interpritationWithOneExpr :: InteprConstraint m
+    => Expr -> (Int -> m ()) -> m ()
+interpritationWithOneExpr expr varAction = do
     st <- get
-    case runReader (runExceptT (eval expr)) st of
-        Left err -> throwError $ InterprExprError err num
-        Right val -> do
-            varAction val num
-            interpritation nextActions (num + 1)
+    val <- runReaderT (eval expr) st
+    varAction val
 
 interpritation :: InteprConstraint m
-    => [Action] -> Int -> m ()
-interpritation [] _ = return ()
-interpritation ((Creature name expr) : nextActions) num =
-    interpritationWithOneCalcExpr nextActions expr (creature name) num
-interpritation ((Assignment name expr) : nextActions) num =
-    interpritationWithOneCalcExpr nextActions expr (assignment name) num
-interpritation ((Write expr) : nextActions) num =
-    interpritationWithOneCalcExpr nextActions expr writeExpr num
-interpritation ((Read name) : nextActions) num = do
-    readVar name num
-    interpritation nextActions (num + 1)
-interpritation ((For name fromExpr toExpr actions) : nextActions) num = do
-    st <- get
-    case runReader (runExceptT (eval fromExpr)) st of
-        Left err -> throwError $ InterprExprError err num
-        Right fromVal ->
-            case runReader (runExceptT (eval toExpr)) st of
-                Left err' -> throwError $ InterprExprError err' num
-                Right toVal -> do
-                    assignment name fromVal num
-                    interpritationFor actions name toVal num
-                    interpritation nextActions (num + length actions + 2)
+    => Action -> m ()
+interpritation (Creature name expr) =
+    interpritationWithOneExpr expr (creature name)
+interpritation (Assignment name expr) =
+    interpritationWithOneExpr expr (assignment name)
+interpritation (Write expr) =
+    interpritationWithOneExpr expr writeExpr
+interpritation (Read name) = readVar name
+interpritation (For name fromExpr toExpr actions) = do
+    (m, num) <- get
+    fromVal <- runReaderT (eval fromExpr) (m, num)
+    toVal <- runReaderT (eval toExpr) (m, num)
+    assignment name fromVal
+    interpritationFor actions name toVal
+
+fullInterpritation :: InteprConstraint m
+    => [Action] -> m ()
+fullInterpritation actions = mapM_ interpritation actions
 
 ------------------------------ TASK 10 -----------------------------
 
@@ -318,7 +325,7 @@ main = do
     case runParser parserProgram "" code of
         Left parseErr -> putStr $ parseErrorPretty parseErr
         Right prog -> do
-            eitherInterpr <- runStateT (runExceptT (interpritation prog 1)) (M.fromList [])
+            eitherInterpr <- runStateT (runExceptT (fullInterpritation prog)) (M.fromList [], 1)
             case eitherInterpr of
                 (Left interprErr, newSt) -> putStrLn $ show interprErr
                 (Right (), newSt)        -> return ()
