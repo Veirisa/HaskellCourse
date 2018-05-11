@@ -5,7 +5,7 @@
 module Main where
 
 import           Control.Monad              (liftM2)
-import           Control.Monad.Except       (MonadError, throwError)
+import           Control.Monad.Except       (MonadError, catchError, throwError)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Reader       (MonadReader, ask, local)
 import           Control.Monad.State        (MonadState, get, modify, put)
@@ -24,7 +24,7 @@ import           Text.Megaparsec.Char       (alphaNumChar, letterChar, space1,
                                              string)
 import qualified Text.Megaparsec.Char.Lexer as L (decimal, lexeme, space,
                                                   symbol)
-import           Text.Megaparsec.Error      (parseErrorPretty)
+import           Text.Megaparsec.Error      (ParseError, parseErrorPretty)
 import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 
 -------------------------- DATA AND TYPES --------------------------
