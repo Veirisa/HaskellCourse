@@ -9,9 +9,9 @@ import           Control.Monad.Except       (MonadError, throwError)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Reader       (MonadReader, ask, local)
 import           Control.Monad.State        (MonadState, get, modify, put)
-import           Control.Monad.Trans.Except (ExceptT, runExceptT)
-import           Control.Monad.Trans.Reader (ReaderT, runReaderT)
-import           Control.Monad.Trans.State  (StateT, runStateT)
+import           Control.Monad.Trans.Except (runExceptT)
+import           Control.Monad.Trans.Reader (runReaderT)
+import           Control.Monad.Trans.State  (runStateT)
 
 import qualified Data.Map                   as M (Map, delete, fromList, insert,
                                                   lookup, member, (!))
@@ -38,16 +38,6 @@ data Expr = Lit Int
           | Let String Expr Expr
     deriving Show
 
-data ExprError = DivError String | NotEvalError String String
-
-instance Show ExprError where
-    show :: ExprError -> String
-    show (DivError actName) =
-          "The expression for " ++ actName ++ " contains division by 0"
-    show (NotEvalError varName actName) =
-        "The expression for " ++ actName ++
-        " can't be fully evaluated because variable \"" ++  varName ++ "\" doesn't exist"
-
 data Action = Creature String Expr
             | Assignment String Expr
             | Read String
@@ -55,28 +45,30 @@ data Action = Creature String Expr
             | For String Expr Expr [Action]
     deriving Show
 
-data ActionError = CreatureError String
-                 | AssignmentError String
-                 | ReadError String
-
-instance Show ActionError where
-    show :: ActionError -> String
-    show (CreatureError name) =
-        "The variable \"" ++ name ++ "\" can't be created because it already exists"
-    show (AssignmentError name) =
-        "The variable \"" ++ name ++ "\" can't be changed because it doesn't exist"
-    show (ReadError name) =
-        "The variable \"" ++ name ++ "\" can't be readed because it doesn't exist"
-
-data InterprError = InterprExprError ExprError Int
-                  | InterprActionError ActionError Int
+data InterprError = ExprDivByZeroError String Int
+                  | ExprNoVarError String String Int
+                  | CreatureError String Int
+                  | AssignmentError String Int
+                  | ReadError String Int
 
 instance Show InterprError where
     show :: InterprError -> String
-    show (InterprExprError err num) =
-        "(" ++ show num ++ "): " ++ show err
-    show (InterprActionError err num) =
-        "(" ++ show num ++ "): " ++ show err
+    show (ExprDivByZeroError actName num) =
+        "(" ++ show num  ++ "): The expression for " ++ actName ++
+        " contains division by 0"
+    show (ExprNoVarError failVarName actName num) =
+        "(" ++ show num  ++ "): The expression for " ++ actName ++
+        " can't be fully evaluated because variable \"" ++  failVarName ++
+        "\" doesn't exist"
+    show (CreatureError varName num) =
+        "(" ++ show num  ++ "): The variable \"" ++ varName ++
+        "\" can't be created because it already exists"
+    show (AssignmentError varName num) =
+        "(" ++ show num  ++ "): The variable \"" ++ varName ++
+        "\" can't be changed because it doesn't exist"
+    show (ReadError varName num) =
+        "(" ++ show num  ++ "): The variable \"" ++ varName ++
+        "\" can't be readed because it doesn't exist"
 
 type InteprConstraintWithoutIO m =
     ( MonadError InterprError m
@@ -211,7 +203,7 @@ eval (Lit val) = return val
 eval (Var name) = do
     (m, num, act) <- ask
     case M.lookup name m of
-        Nothing  -> throwError $ InterprExprError (NotEvalError name act) num
+        Nothing  -> throwError $ ExprNoVarError name act num
         Just val -> return val
 eval (Add l r) = liftM2 (+) (eval l) (eval r)
 eval (Sub l r) = liftM2 (-) (eval l) (eval r)
@@ -221,7 +213,7 @@ eval (Div l r) = do
     if rCalced == 0
     then do
         (m, num, act) <- ask
-        throwError $ InterprExprError (DivError act) num
+        throwError $ ExprDivByZeroError act num
     else do
         lCalced <- eval l
         return $ div lCalced rCalced
@@ -231,11 +223,11 @@ eval (Let v eqExpr inExpr) = do
     local changeMap (eval inExpr)
 
 varActionWithExcept :: InteprConstraintWithoutIO m
-    => String -> Int -> Bool -> (String -> ActionError) -> m ()
+    => String -> Int -> Bool -> (String -> Int -> InterprError) -> m ()
 varActionWithExcept name val mustBeMember constrError = do
     (m, num) <- get
     if not (M.member name m == mustBeMember)
-    then throwError $ InterprActionError (constrError name) num
+    then throwError $ constrError name num
     else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
 creature :: InteprConstraintWithoutIO m
@@ -268,20 +260,20 @@ getActionsLength :: [Action] -> Int
 getActionsLength actions = sum $ map getActionLength actions
 
 interpritationFor :: InteprConstraint m
-    => [Action] -> String -> Int -> m ()
-interpritationFor actions name toVal = do
+    => [Action] -> String -> Int -> String -> m ()
+interpritationFor actions name toVal actName = do
     (m, num) <- get
     case M.lookup name m of
-        Nothing -> throwError $ InterprActionError (AssignmentError name) num
+        Nothing -> throwError $ AssignmentError name num
         Just curVal ->
             if curVal >= toVal
             then
                 modify $ \(curM, curNum) -> (curM, curNum + getActionsLength actions + 1)
             else do
                 fullInterpritation actions
-                interpritationWithOneExpr (Add (Var name) (Lit 1)) (assignment name)  ("assignment " ++ name ++ "\"")
+                interpritationWithOneExpr (Add (Var name) (Lit 1)) (assignment name) actName
                 modify $ \(curM, curNum) -> (curM, num)
-                interpritationFor actions name toVal
+                interpritationFor actions name toVal actName
 
 interpritationWithOneExpr :: InteprConstraint m
     => Expr -> (Int -> m ()) -> String -> m ()
@@ -301,11 +293,12 @@ interpritation (Write expr) =
 interpritation (Read name) = readVar name
 interpritation (For name fromExpr toExpr actions) = do
     (m, num) <- get
-    let env = (m, num, "assignment \"" ++ name ++ "\"")
+    let actName = "assignment \"" ++ name ++ "\""
+    let env = (m, num, actName)
     fromVal <- runReaderT (eval fromExpr) env
     toVal <- runReaderT (eval toExpr) env
     assignment name fromVal
-    interpritationFor actions name toVal
+    interpritationFor actions name toVal actName
 
 fullInterpritation :: InteprConstraint m
     => [Action] -> m ()
