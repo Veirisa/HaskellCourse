@@ -27,9 +27,7 @@ import qualified Text.Megaparsec.Char.Lexer as L (decimal, lexeme, space,
 import           Text.Megaparsec.Error      (parseErrorPretty)
 import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 
--- parseErrorTextPretty
-
------------------------------- TASK 1 ------------------------------
+-------------------------- DATA AND TYPES --------------------------
 
 data Expr = Lit Int
           | Var String
@@ -40,42 +38,57 @@ data Expr = Lit Int
           | Let String Expr Expr
     deriving Show
 
-data ExprError = DivError | NotEvalError String
+data ExprError = DivError String | NotEvalError String String
 
 instance Show ExprError where
     show :: ExprError -> String
-    show DivError = "The expression contains division by 0"
-    show (NotEvalError name)
-        = "The expression can't be fully evaluated because variable \""
-          ++ name ++ "\" doesn't exist"
+    show (DivError actName) =
+          "The expression for " ++ actName ++ " contains division by 0"
+    show (NotEvalError varName actName) =
+        "The expression for " ++ actName ++
+        " can't be fully evaluated because variable \"" ++  varName ++ "\" doesn't exist"
 
-eval :: ( MonadError InterprError m
-        , MonadReader (M.Map String Int, Int) m
-        )
-    => Expr -> m Int
-eval (Lit val) = return val
-eval (Var name) = do
-    (m, num) <- ask
-    case M.lookup name m of
-        Nothing  -> throwError  $ InterprExprError (NotEvalError name) num
-        Just val -> return val
-eval (Add l r) = liftM2 (+) (eval l) (eval r)
-eval (Sub l r) = liftM2 (-) (eval l) (eval r)
-eval (Mul l r) = liftM2 (*) (eval l) (eval r)
-eval (Div l r) = do
-    rCalced <- eval r
-    if rCalced == 0
-    then do
-        (m, num) <- ask
-        throwError $ InterprExprError DivError num
-    else do
-        lCalced <- eval l
-        return $ div lCalced rCalced
-eval (Let v eqExpr inExpr) = do
-    eqExprCalced <- eval eqExpr
-    local (\(m, num) -> (M.insert v eqExprCalced m, num)) (eval inExpr)
+data Action = Creature String Expr
+            | Assignment String Expr
+            | Read String
+            | Write Expr
+            | For String Expr Expr [Action]
+    deriving Show
 
------------------------------- TASK 2 ------------------------------
+data ActionError = CreatureError String
+                 | AssignmentError String
+                 | ReadError String
+
+instance Show ActionError where
+    show :: ActionError -> String
+    show (CreatureError name) =
+        "The variable \"" ++ name ++ "\" can't be created because it already exists"
+    show (AssignmentError name) =
+        "The variable \"" ++ name ++ "\" can't be changed because it doesn't exist"
+    show (ReadError name) =
+        "The variable \"" ++ name ++ "\" can't be readed because it doesn't exist"
+
+data InterprError = InterprExprError ExprError Int
+                  | InterprActionError ActionError Int
+
+instance Show InterprError where
+    show :: InterprError -> String
+    show (InterprExprError err num) =
+        "(" ++ show num ++ "): " ++ show err
+    show (InterprActionError err num) =
+        "(" ++ show num ++ "): " ++ show err
+
+type InteprConstraintWithoutIO m =
+    ( MonadError InterprError m
+    , MonadState (M.Map String Int, Int) m
+    )
+
+type InteprConstraint m =
+    ( InteprConstraintWithoutIO m
+    , MonadIO m
+    )
+
+----------------------------- PARSERS ------------------------------
 
 type Parser = Parsec Void String
 
@@ -135,82 +148,6 @@ exprTerm =
     <|> Var <$> identifier
     <|> Lit <$> integer
 
------------------------------ TASKS 3-8 ----------------------------
-
-------- Structures
-
-data Action = Creature String Expr
-            | Assignment String Expr
-            | Read String
-            | Write Expr
-            | For String Expr Expr [Action]
-    deriving Show
-
-data ActionError = CreatureError String
-                 | AssignmentError String
-                 | ReadError String
-
-instance Show ActionError where
-    show :: ActionError -> String
-    show (CreatureError name) =
-        "The variable \"" ++ name ++ "\" can't be created because it already exists"
-    show (AssignmentError name) =
-        "The variable \"" ++ name ++ "\" can't be changed because it doesn't exist"
-    show (ReadError name) =
-        "The variable \"" ++ name ++ "\" can't be readed because it doesn't exist"
-
-data InterprError = InterprExprError ExprError Int
-                  | InterprActionError ActionError Int
-
-instance Show InterprError where
-    show :: InterprError -> String
-    show (InterprExprError err num) =
-        "(" ++ show num ++ "): " ++ show err
-    show (InterprActionError err num) =
-        "(" ++ show num ++ "): " ++ show err
-
-type InteprConstraintWithoutIO m =
-    ( MonadError InterprError m
-    , MonadState (M.Map String Int, Int) m
-    )
-
-type InteprConstraint m =
-    ( InteprConstraintWithoutIO m
-    , MonadIO m
-    )
-
-------- Functions
-
-varActionWithExcept :: InteprConstraintWithoutIO m
-    => String -> Int -> Bool -> (String -> ActionError) -> m ()
-varActionWithExcept name val mustBeMember constrError = do
-    (m, num) <- get
-    if not (M.member name m == mustBeMember)
-    then throwError $ InterprActionError (constrError name) num
-    else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
-
-creature :: InteprConstraintWithoutIO m
-    => String -> Int -> m ()
-creature name val = varActionWithExcept name val False CreatureError
-
-assignment :: InteprConstraintWithoutIO m
-    => String -> Int -> m ()
-assignment name val = varActionWithExcept name val True AssignmentError
-
-readVar :: InteprConstraint m
-    => String -> m ()
-readVar name= do
-    valStr <- liftIO $ getLine
-    varActionWithExcept name (read valStr) True ReadError
-
-writeExpr :: InteprConstraint m
-    => Int  -> m ()
-writeExpr val = do
-    liftIO $ putStrLn (show val)
-    modify $ \(curM, curNum) -> (curM, curNum + 1)
-
-------- Parsers
-
 parserCreature :: Parser Action
 parserCreature = do
     rword "mut"
@@ -264,7 +201,64 @@ parserAction =
 parserProgram :: Parser [Action]
 parserProgram = many parserAction
 
-------- Interpritation
+---------------------------- FUNCTIONS -----------------------------
+
+eval :: ( MonadError InterprError m
+        , MonadReader (M.Map String Int, Int, String) m
+        )
+    => Expr -> m Int
+eval (Lit val) = return val
+eval (Var name) = do
+    (m, num, act) <- ask
+    case M.lookup name m of
+        Nothing  -> throwError $ InterprExprError (NotEvalError name act) num
+        Just val -> return val
+eval (Add l r) = liftM2 (+) (eval l) (eval r)
+eval (Sub l r) = liftM2 (-) (eval l) (eval r)
+eval (Mul l r) = liftM2 (*) (eval l) (eval r)
+eval (Div l r) = do
+    rCalced <- eval r
+    if rCalced == 0
+    then do
+        (m, num, act) <- ask
+        throwError $ InterprExprError (DivError act) num
+    else do
+        lCalced <- eval l
+        return $ div lCalced rCalced
+eval (Let v eqExpr inExpr) = do
+    eqExprCalced <- eval eqExpr
+    let changeMap = \(curM, curNum, curAct) -> (M.insert v eqExprCalced curM, curNum, curAct)
+    local changeMap (eval inExpr)
+
+varActionWithExcept :: InteprConstraintWithoutIO m
+    => String -> Int -> Bool -> (String -> ActionError) -> m ()
+varActionWithExcept name val mustBeMember constrError = do
+    (m, num) <- get
+    if not (M.member name m == mustBeMember)
+    then throwError $ InterprActionError (constrError name) num
+    else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
+
+creature :: InteprConstraintWithoutIO m
+    => String -> Int -> m ()
+creature name val = varActionWithExcept name val False CreatureError
+
+assignment :: InteprConstraintWithoutIO m
+    => String -> Int -> m ()
+assignment name val = varActionWithExcept name val True AssignmentError
+
+readVar :: InteprConstraint m
+    => String -> m ()
+readVar name= do
+    valStr <- liftIO $ getLine
+    varActionWithExcept name (read valStr) True ReadError
+
+writeExpr :: InteprConstraint m
+    => Int  -> m ()
+writeExpr val = do
+    liftIO $ putStrLn (show val)
+    modify $ \(curM, curNum) -> (curM, curNum + 1)
+
+-------------------------- INTERPRITATION --------------------------
 
 getActionLength :: Action -> Int
 getActionLength (For _ _ _ actions) = 2 + getActionsLength actions
@@ -285,30 +279,31 @@ interpritationFor actions name toVal = do
                 modify $ \(curM, curNum) -> (curM, curNum + getActionsLength actions + 1)
             else do
                 fullInterpritation actions
-                interpritationWithOneExpr (Add (Var name) (Lit 1)) (assignment name)
+                interpritationWithOneExpr (Add (Var name) (Lit 1)) (assignment name)  ("assignment " ++ name ++ "\"")
                 modify $ \(curM, curNum) -> (curM, num)
                 interpritationFor actions name toVal
 
 interpritationWithOneExpr :: InteprConstraint m
-    => Expr -> (Int -> m ()) -> m ()
-interpritationWithOneExpr expr varAction = do
-    st <- get
-    val <- runReaderT (eval expr) st
+    => Expr -> (Int -> m ()) -> String -> m ()
+interpritationWithOneExpr expr varAction actName = do
+    (m, num) <- get
+    val <- runReaderT (eval expr) (m, num, actName)
     varAction val
 
 interpritation :: InteprConstraint m
     => Action -> m ()
 interpritation (Creature name expr) =
-    interpritationWithOneExpr expr (creature name)
+    interpritationWithOneExpr expr (creature name) ("creature \"" ++ name ++ "\"")
 interpritation (Assignment name expr) =
-    interpritationWithOneExpr expr (assignment name)
+    interpritationWithOneExpr expr (assignment name) ("assignment \"" ++ name ++ "\"")
 interpritation (Write expr) =
-    interpritationWithOneExpr expr writeExpr
+    interpritationWithOneExpr expr writeExpr "writing"
 interpritation (Read name) = readVar name
 interpritation (For name fromExpr toExpr actions) = do
     (m, num) <- get
-    fromVal <- runReaderT (eval fromExpr) (m, num)
-    toVal <- runReaderT (eval toExpr) (m, num)
+    let env = (m, num, "assignment \"" ++ name ++ "\"")
+    fromVal <- runReaderT (eval fromExpr) env
+    toVal <- runReaderT (eval toExpr) env
     assignment name fromVal
     interpritationFor actions name toVal
 
@@ -316,7 +311,7 @@ fullInterpritation :: InteprConstraint m
     => [Action] -> m ()
 fullInterpritation actions = mapM_ interpritation actions
 
------------------------------- TASK 10 -----------------------------
+----------------------------- STARTING -----------------------------
 
 main :: IO ()
 main = do
