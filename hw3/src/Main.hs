@@ -5,10 +5,12 @@
 module Main where
 
 import           Control.Monad              (liftM2)
-import           Control.Monad.Except       (MonadError, catchError, throwError)
+import           Control.Monad.Cont         (MonadCont, callCC, when)
+import           Control.Monad.Except       (MonadError, throwError)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Reader       (MonadReader, ask, local)
 import           Control.Monad.State        (MonadState, get, modify, put)
+import           Control.Monad.Trans.Cont   (runContT)
 import           Control.Monad.Trans.Except (runExceptT)
 import           Control.Monad.Trans.Reader (runReaderT)
 import           Control.Monad.Trans.State  (runStateT)
@@ -24,7 +26,7 @@ import           Text.Megaparsec.Char       (alphaNumChar, letterChar, space1,
                                              string)
 import qualified Text.Megaparsec.Char.Lexer as L (decimal, lexeme, space,
                                                   symbol)
-import           Text.Megaparsec.Error      (ParseError, parseErrorPretty)
+import           Text.Megaparsec.Error      (parseErrorPretty)
 import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 
 -------------------------- DATA AND TYPES --------------------------
@@ -36,14 +38,15 @@ data Expr = Lit Int
           | Mul Expr Expr
           | Div Expr Expr
           | Let String Expr Expr
-    deriving Show
+    deriving (Show, Eq)
 
 data Action = Creature String Expr
             | Assignment String Expr
             | Read String
             | Write Expr
             | For String Expr Expr [Action]
-    deriving Show
+            | Break
+    deriving (Show, Eq)
 
 data InterprError = ExprDivByZeroError String Int
                   | ExprNoVarError String String Int
@@ -70,14 +73,19 @@ instance Show InterprError where
         "(" ++ show num  ++ "): The variable \"" ++ varName ++
         "\" can't be readed because it doesn't exist"
 
-type InteprConstraintWithoutIO m =
+type InteprConstraintWithoutContIO m =
     ( MonadError InterprError m
     , MonadState (M.Map String Int, Int) m
     )
 
-type InteprConstraint m =
-    ( InteprConstraintWithoutIO m
+type InteprConstraintWithoutCont m =
+    ( InteprConstraintWithoutContIO m
     , MonadIO m
+    )
+
+type InteprConstraint m =
+    ( InteprConstraintWithoutCont m
+    , MonadCont m
     )
 
 ----------------------------- PARSERS ------------------------------
@@ -100,7 +108,7 @@ integer :: Parser Int
 integer = lexeme L.decimal
 
 rws :: [String]
-rws = ["let", "in", "mut", "for", "from", "to"]
+rws = ["let", "in", "mut", "for", "from", "to", "break"]
 
 identifier :: Parser String
 identifier = (lexeme . try) (correctName >>= check)
@@ -182,6 +190,11 @@ parserFor = do
     symbol "}"
     return $ For varName fromExpr toExpr actions
 
+parserBreak :: Parser Action
+parserBreak = do
+    rword "break"
+    return Break
+
 parserAction :: Parser Action
 parserAction =
     parserCreature
@@ -189,6 +202,7 @@ parserAction =
     <|> parserRead
     <|> parserWrite
     <|> parserFor
+    <|> parserBreak
 
 parserProgram :: Parser [Action]
 parserProgram = many parserAction
@@ -222,7 +236,7 @@ eval (Let v eqExpr inExpr) = do
     let changeMap = \(curM, curNum, curAct) -> (M.insert v eqExprCalced curM, curNum, curAct)
     local changeMap (eval inExpr)
 
-varActionWithExcept :: InteprConstraintWithoutIO m
+varActionWithExcept :: InteprConstraintWithoutContIO m
     => String -> Int -> Bool -> (String -> Int -> InterprError) -> m ()
 varActionWithExcept name val mustBeMember constrError = do
     (m, num) <- get
@@ -230,21 +244,21 @@ varActionWithExcept name val mustBeMember constrError = do
     then throwError $ constrError name num
     else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
-creature :: InteprConstraintWithoutIO m
+creature :: InteprConstraintWithoutContIO m
     => String -> Int -> m ()
 creature name val = varActionWithExcept name val False CreatureError
 
-assignment :: InteprConstraintWithoutIO m
+assignment :: InteprConstraintWithoutContIO m
     => String -> Int -> m ()
 assignment name val = varActionWithExcept name val True AssignmentError
 
-readVar :: InteprConstraint m
+readVar :: InteprConstraintWithoutCont m
     => String -> m ()
 readVar name= do
     valStr <- liftIO $ getLine
     varActionWithExcept name (read valStr) True ReadError
 
-writeExpr :: InteprConstraint m
+writeExpr :: InteprConstraintWithoutCont m
     => Int  -> m ()
 writeExpr val = do
     liftIO $ putStrLn (show val)
@@ -275,7 +289,7 @@ interpritationFor actions name toVal actName = do
                 modify $ \(curM, curNum) -> (curM, num)
                 interpritationFor actions name toVal actName
 
-interpritationWithOneExpr :: InteprConstraint m
+interpritationWithOneExpr :: InteprConstraintWithoutCont m
     => Expr -> (Int -> m ()) -> String -> m ()
 interpritationWithOneExpr expr varAction actName = do
     (m, num) <- get
@@ -299,10 +313,15 @@ interpritation (For name fromExpr toExpr actions) = do
     toVal <- runReaderT (eval toExpr) env
     assignment name fromVal
     interpritationFor actions name toVal actName
+interpritation Break = return ()
 
 fullInterpritation :: InteprConstraint m
     => [Action] -> m ()
-fullInterpritation actions = mapM_ interpritation actions
+fullInterpritation actions = callCC $ \exit -> mapM_ (maybeInterpritation exit) actions
+  where
+    maybeInterpritation doExit action = do
+      when (action == Break) $ doExit ()
+      interpritation action
 
 ----------------------------- STARTING -----------------------------
 
@@ -313,7 +332,7 @@ main = do
     case runParser parserProgram "" code of
         Left parseErr -> putStr $ parseErrorPretty parseErr
         Right prog -> do
-            eitherInterpr <- runStateT (runExceptT (fullInterpritation prog)) (M.fromList [], 1)
+            eitherInterpr <- runContT (runStateT (runExceptT (fullInterpritation prog)) (M.fromList [], 1)) return
             case eitherInterpr of
                 (Left interprErr, newSt) -> putStrLn $ show interprErr
                 (Right (), newSt)        -> return ()

@@ -1,0 +1,13 @@
+mut i = 0
+mut j = 0
+< 1
+for (i from 0 to 2) {
+    < 2
+    for (j from 0 to 2) {
+        < 3
+        break
+        < 4
+    }
+    < 5
+}
+< 6
