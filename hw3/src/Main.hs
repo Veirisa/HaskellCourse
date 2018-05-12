@@ -15,8 +15,8 @@ import           Control.Monad.Trans.Except (runExceptT)
 import           Control.Monad.Trans.Reader (runReaderT)
 import           Control.Monad.Trans.State  (runStateT)
 
-import qualified Data.Map                   as M (Map, delete, fromList, insert,
-                                                  lookup, member, (!))
+import qualified Data.Map                   as M (Map, fromList, insert, lookup,
+                                                  member, (!))
 import           Data.Void                  (Void)
 
 import           Text.Megaparsec            (Parsec, between, empty, many,
@@ -44,7 +44,7 @@ data Action = Creature String Expr
             | Assignment String Expr
             | Read String
             | Write Expr
-            | For String Expr Expr [Action]
+            | For String Expr Expr [Action] Int
             | Break
     deriving (Show, Eq)
 
@@ -188,7 +188,14 @@ parserFor = do
     symbol "{"
     actions <- parserProgram
     symbol "}"
-    return $ For varName fromExpr toExpr actions
+    return $ For varName fromExpr toExpr actions (getActionsLength actions)
+  where
+    getActionsLength :: [Action] -> Int
+    getActionsLength actions = sum $ map getActionLength actions
+
+    getActionLength :: Action -> Int
+    getActionLength (For _ _ _ _ len) = 2 + len
+    getActionLength _                 = 1
 
 parserBreak :: Parser Action
 parserBreak = do
@@ -266,28 +273,24 @@ writeExpr val = do
 
 -------------------------- INTERPRITATION --------------------------
 
-getActionLength :: Action -> Int
-getActionLength (For _ _ _ actions) = 2 + getActionsLength actions
-getActionLength _                   = 1
-
-getActionsLength :: [Action] -> Int
-getActionsLength actions = sum $ map getActionLength actions
-
-interpritationFor :: InteprConstraint m
-    => [Action] -> String -> Int -> String -> m ()
-interpritationFor actions name toVal actName = do
+interpritationFor :: ( InteprConstraint m
+                     , MonadReader ([Action], Int, String, Expr, Int, String) m
+                     )
+    => m ()
+interpritationFor = do
     (m, num) <- get
+    (actions, len, name, incExpr, toVal, actName) <- ask
     case M.lookup name m of
         Nothing -> throwError $ AssignmentError name num
         Just curVal ->
             if curVal >= toVal
             then
-                modify $ \(curM, curNum) -> (curM, curNum + getActionsLength actions + 1)
+                modify $ \(curM, curNum) -> (curM, curNum + len + 1)
             else do
                 fullInterpritation actions
-                interpritationWithOneExpr (Add (Var name) (Lit 1)) (assignment name) actName
+                interpritationWithOneExpr incExpr (assignment name) actName
                 modify $ \(curM, curNum) -> (curM, num)
-                interpritationFor actions name toVal actName
+                interpritationFor
 
 interpritationWithOneExpr :: InteprConstraintWithoutCont m
     => Expr -> (Int -> m ()) -> String -> m ()
@@ -305,23 +308,27 @@ interpritation (Assignment name expr) =
 interpritation (Write expr) =
     interpritationWithOneExpr expr writeExpr "writing"
 interpritation (Read name) = readVar name
-interpritation (For name fromExpr toExpr actions) = do
+interpritation (For name fromExpr toExpr actions len) = do
     (m, num) <- get
     let actName = "assignment \"" ++ name ++ "\""
     let env = (m, num, actName)
     fromVal <- runReaderT (eval fromExpr) env
     toVal <- runReaderT (eval toExpr) env
     assignment name fromVal
-    interpritationFor actions name toVal actName
+    let incExpr = Add (Var name) (Lit 1)
+    runReaderT interpritationFor (actions, len, name, incExpr, toVal, actName)
 interpritation Break = return ()
 
 fullInterpritation :: InteprConstraint m
     => [Action] -> m ()
-fullInterpritation actions = callCC $ \exit -> mapM_ (maybeInterpritation exit) actions
+fullInterpritation actions = callCC $ \exit ->
+      mapM_ (maybeInterpritation exit) actions
   where
+    maybeInterpritation :: InteprConstraint m
+        => (() -> m ()) -> Action -> m ()
     maybeInterpritation doExit action = do
-      when (action == Break) $ doExit ()
-      interpritation action
+        when (action == Break) $ doExit ()
+        interpritation action
 
 ----------------------------- STARTING -----------------------------
 
@@ -332,7 +339,10 @@ main = do
     case runParser parserProgram "" code of
         Left parseErr -> putStr $ parseErrorPretty parseErr
         Right prog -> do
-            eitherInterpr <- runContT (runStateT (runExceptT (fullInterpritation prog)) (M.fromList [], 1)) return
+            let interpr = fullInterpritation prog
+            let state = (M.fromList [], 1)
+            let exit = return
+            eitherInterpr <- runContT (runStateT (runExceptT interpr) state) exit
             case eitherInterpr of
                 (Left interprErr, newSt) -> putStrLn $ show interprErr
                 (Right (), newSt)        -> return ()
