@@ -34,40 +34,44 @@ import qualified Text.Megaparsec.Byte.Lexer as L (decimal, lexeme, signed,
 import           Text.Megaparsec.Error      (parseErrorPretty)
 import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 
+import           System.Environment         (getArgs)
+
 -------------------------- DATA AND TYPES --------------------------
 
+type BString = C.ByteString
+
 data Expr = Lit Int
-          | Var C.ByteString
+          | Var BString
           | Add Expr Expr
           | Sub Expr Expr
           | Mul Expr Expr
           | Div Expr Expr
-          | Let C.ByteString Expr Expr
+          | Let BString Expr Expr
     deriving (Show, Eq)
 
-data Action = Create C.ByteString Expr
-            | Assign C.ByteString Expr
-            | Read C.ByteString
+data Action = Create BString Expr
+            | Assign BString Expr
+            | Read BString
             | Write Expr
-            | For C.ByteString Expr Expr [Action] Int
+            | For BString Expr Expr [Action] Int
             | Break
     deriving (Show, Eq)
 
-data InterprError = ExprDivByZeroError C.ByteString Int
-                  | ExprNoVarError C.ByteString C.ByteString Int
-                  | CreateError C.ByteString Int
-                  | AssignError C.ByteString Int
-                  | ReadError C.ByteString Int
+data InterprError = ExprDivByZeroError BString Int
+                  | ExprNoVarError BString BString Int
+                  | CreateError BString Int
+                  | AssignError BString Int
+                  | ReadError BString Int
 
 class ShowBS a where
-    showBS :: a -> C.ByteString
+    showBS :: a -> BString
 
 instance ShowBS Int where
-    showBS :: Int -> C.ByteString
+    showBS :: Int -> BString
     showBS x = C.pack $ show x
 
 instance ShowBS InterprError where
-    showBS :: InterprError -> C.ByteString
+    showBS :: InterprError -> BString
     showBS (ExprDivByZeroError actName num) =
         "(" `C.append` showBS num
         `C.append` "): The expression for "
@@ -98,7 +102,7 @@ instance ShowBS InterprError where
 
 type InteprConstraintWithoutContIO m =
     ( MonadError InterprError m
-    , MonadState (M.Map C.ByteString Int, Int) m
+    , MonadState (M.Map BString Int, Int) m
     )
 
 type InteprConstraintWithoutCont m =
@@ -113,7 +117,7 @@ type InteprConstraint m =
 
 ----------------------------- PARSING ------------------------------
 
-type Parser = Parsec Void C.ByteString
+type Parser = Parsec Void BString
 
 sc :: Parser ()
 sc = L.space space1 empty empty
@@ -121,7 +125,7 @@ sc = L.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-symbol :: C.ByteString -> Parser ()
+symbol :: BString -> Parser ()
 symbol = void . L.symbol sc
 
 parens :: Parser a -> Parser a
@@ -130,20 +134,22 @@ parens = between (symbol "(") (symbol ")")
 integer :: Parser Int
 integer = lexeme $ L.signed (L.space empty empty empty) L.decimal
 
-keywordList :: [C.ByteString]
-keywordList = ["let", "in", "mut", "for", "from", "to", "break"]
-
-identifier :: Parser C.ByteString
+identifier :: Parser BString
 identifier = (lexeme . try) (name >>= isNotKeyword)
   where
-    name =
-        cons <$> letterChar <*> takeWhileP Nothing (isAlphaNum . chr . fromIntegral)
+    name :: Parser BString
+    name = cons <$> letterChar <*> takeWhileP Nothing (isAlphaNum . chr . fromIntegral)
+
+    isNotKeyword :: BString -> Parser BString
     isNotKeyword w =
         if w `elem` keywordList
         then fail $ "keyword " ++ show w ++ " can't be a variable name"
         else return w
 
-keyword :: C.ByteString -> Parser ()
+    keywordList :: [BString]
+    keywordList = ["let", "in", "mut", "for", "from", "to", "break"]
+
+keyword :: BString -> Parser ()
 keyword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 
 parserLet :: Parser Expr
@@ -172,7 +178,7 @@ exprTerm =
     <|> Var <$> identifier
     <|> Lit <$> integer
 
-parserCreateOrAssign :: (C.ByteString -> Expr -> Action) -> Parser Action
+parserCreateOrAssign :: (BString -> Expr -> Action) -> Parser Action
 parserCreateOrAssign constrAction = do
     varName <- identifier
     symbol "="
@@ -241,7 +247,7 @@ parserProgram = many parserAction
 ---------------------------- FUNCTIONS -----------------------------
 
 eval :: ( MonadError InterprError m
-        , MonadReader (M.Map C.ByteString Int, Int, C.ByteString) m
+        , MonadReader (M.Map BString Int, Int, BString) m
         )
     => Expr -> m Int
 eval (Lit val) = return val
@@ -267,27 +273,27 @@ eval (Let v eqExpr inExpr) = do
     let changeEnv (m', num', act') = (M.insert v eqExprCalced m', num', act')
     local changeEnv (eval inExpr)
 
-varActionWithExcept :: InteprConstraintWithoutContIO m
-    => C.ByteString -> Int -> Bool -> (C.ByteString -> Int -> InterprError) -> m ()
-varActionWithExcept name val mustBeMember constrError = do
+actionWithExcept :: InteprConstraintWithoutContIO m
+    => BString -> Int -> Bool -> (BString -> Int -> InterprError) -> m ()
+actionWithExcept name val mustBeMember constrError = do
     (m, num) <- get
     if M.member name m /= mustBeMember
     then throwError $ constrError name num
     else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
 create :: InteprConstraintWithoutContIO m
-    => C.ByteString -> Int -> m ()
-create name val = varActionWithExcept name val False CreateError
+    => BString -> Int -> m ()
+create name val = actionWithExcept name val False CreateError
 
 assign :: InteprConstraintWithoutContIO m
-    => C.ByteString -> Int -> m ()
-assign name val = varActionWithExcept name val True AssignError
+    => BString -> Int -> m ()
+assign name val = actionWithExcept name val True AssignError
 
 readVar :: InteprConstraintWithoutCont m
-    => C.ByteString -> m ()
+    => BString -> m ()
 readVar name = do
     valStr <- liftIO getLine
-    varActionWithExcept name (read valStr) True ReadError
+    actionWithExcept name (read valStr) True ReadError
 
 writeExpr :: InteprConstraintWithoutCont m
     => Int  -> m ()
@@ -298,7 +304,7 @@ writeExpr val = do
 -------------------------- INTERPRITATION --------------------------
 
 interpritationFor :: ( InteprConstraint m
-                     , MonadReader ([Action], Int, C.ByteString, Expr, Int, C.ByteString) m
+                     , MonadReader ([Action], Int, BString, Expr, Int, BString) m
                      )
     => m ()
 interpritationFor = callCC $ \exit -> do
@@ -308,8 +314,7 @@ interpritationFor = callCC $ \exit -> do
         Nothing -> throwError $ AssignError name num
         Just counterVal ->
             if counterVal >= toVal
-            then
-                modify $ \(curM, curNum) -> (curM, curNum + len + 1)
+            then modify $ \(curM, curNum) -> (curM, curNum + len + 1)
             else do
                 mapM_ (maybeInterpritation exit) actions
                 interpritationWithOneExpr incExpr (assign name) actName
@@ -323,11 +328,11 @@ interpritationFor = callCC $ \exit -> do
         interpritation action
 
 interpritationWithOneExpr :: InteprConstraintWithoutCont m
-    => Expr -> (Int -> m ()) -> C.ByteString -> m ()
-interpritationWithOneExpr expr varAction actName = do
+    => Expr -> (Int -> m ()) -> BString -> m ()
+interpritationWithOneExpr expr valAction actName = do
     (m, num) <- get
     val <- runReaderT (eval expr) (m, num, actName)
-    varAction val
+    valAction val
 
 interpritation :: InteprConstraint m
     => Action -> m ()
@@ -356,11 +361,10 @@ fullInterpritation :: InteprConstraint m
     => [Action] -> m ()
 fullInterpritation = mapM_ interpritation
 
------------------------------ STARTING -----------------------------
+---------------------------- EXECUTION -----------------------------
 
-main :: IO ()
-main = do
-    path <- getLine
+execProgram :: FilePath -> IO ()
+execProgram path = do
     code <- C.readFile path
     case runParser parserProgram "" code of
         Left parseErr -> putStr $ parseErrorPretty parseErr
@@ -372,3 +376,10 @@ main = do
             case eitherInterpr of
                 (Left interprErr, _) -> C.putStrLn $ showBS interprErr
                 (Right (), _)        -> return ()
+
+main :: IO ()
+main = do
+    args <- getArgs
+    case args of
+        [path] -> execProgram path
+        _      -> putStrLn "Wrong number of arguments"
