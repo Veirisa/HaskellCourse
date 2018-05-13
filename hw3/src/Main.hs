@@ -29,8 +29,8 @@ import           Text.Megaparsec            (Parsec, between, empty, many,
                                              takeWhileP, try, (<|>))
 import           Text.Megaparsec.Byte       (alphaNumChar, letterChar, space1,
                                              string)
-import qualified Text.Megaparsec.Byte.Lexer as L (decimal, lexeme, space,
-                                                  symbol)
+import qualified Text.Megaparsec.Byte.Lexer as L (decimal, lexeme, signed,
+                                                  space, symbol)
 import           Text.Megaparsec.Error      (parseErrorPretty)
 import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 
@@ -128,7 +128,7 @@ parens :: Parser a -> Parser a
 parens = between (symbol "(") (symbol ")")
 
 integer :: Parser Int
-integer = lexeme L.decimal
+integer = lexeme $ L.signed (L.space empty empty empty) L.decimal
 
 keywordList :: [C.ByteString]
 keywordList = ["let", "in", "mut", "for", "from", "to", "break"]
