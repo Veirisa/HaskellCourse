@@ -45,8 +45,8 @@ data Expr = Lit Int
           | Let C.ByteString Expr Expr
     deriving (Show, Eq)
 
-data Action = Creature C.ByteString Expr
-            | Assignment C.ByteString Expr
+data Action = Create C.ByteString Expr
+            | Assign C.ByteString Expr
             | Read C.ByteString
             | Write Expr
             | For C.ByteString Expr Expr [Action] Int
@@ -55,8 +55,8 @@ data Action = Creature C.ByteString Expr
 
 data InterprError = ExprDivByZeroError C.ByteString Int
                   | ExprNoVarError C.ByteString C.ByteString Int
-                  | CreatureError C.ByteString Int
-                  | AssignmentError C.ByteString Int
+                  | CreateError C.ByteString Int
+                  | AssignError C.ByteString Int
                   | ReadError C.ByteString Int
 
 class ShowBS a where
@@ -80,12 +80,12 @@ instance ShowBS InterprError where
         `C.append` " can't be fully evaluated because variable \""
         `C.append` failVarName
         `C.append` "\" doesn't exist"
-    showBS (CreatureError varName num) =
+    showBS (CreateError varName num) =
         "(" `C.append` showBS num
         `C.append` "): The variable \""
         `C.append` varName
         `C.append` "\" can't be created because it already exists"
-    showBS (AssignmentError varName num) =
+    showBS (AssignError varName num) =
         "(" `C.append` showBS num
         `C.append` "): The variable \""
         `C.append` varName
@@ -121,11 +121,11 @@ sc = L.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-skipSymbol :: C.ByteString -> Parser ()
-skipSymbol = void . L.symbol sc
+symbol :: C.ByteString -> Parser ()
+symbol = void . L.symbol sc
 
 parens :: Parser a -> Parser a
-parens = between (skipSymbol "(") (skipSymbol ")")
+parens = between (symbol "(") (symbol ")")
 
 integer :: Parser Int
 integer = lexeme $ L.signed (L.space empty empty empty) L.decimal
@@ -150,7 +150,7 @@ parserLet :: Parser Expr
 parserLet = do
     keyword "let"
     varName <- identifier
-    skipSymbol "="
+    symbol "="
     eqExpr <- parserExpr
     keyword "in"
     inExpr <- parserExpr
@@ -161,10 +161,10 @@ parserExpr = makeExprParser exprTerm exprOperators
 
 exprOperators :: [[Operator Parser Expr]]
 exprOperators =
-    [ [ InfixL (Mul <$ skipSymbol "*")
-      , InfixL (Div <$ skipSymbol "/") ]
-    , [ InfixL (Add <$ skipSymbol "+")
-      , InfixL (Sub <$ skipSymbol "-") ] ]
+    [ [ InfixL (Mul <$ symbol "*")
+      , InfixL (Div <$ symbol "/") ]
+    , [ InfixL (Add <$ symbol "+")
+      , InfixL (Sub <$ symbol "-") ] ]
 
 exprTerm :: Parser Expr
 exprTerm =
@@ -172,46 +172,46 @@ exprTerm =
     <|> Var <$> identifier
     <|> Lit <$> integer
 
-parserCreature :: Parser Action
-parserCreature = do
-    keyword "mut"
+parserCreateOrAssign :: (C.ByteString -> Expr -> Action) -> Parser Action
+parserCreateOrAssign constrAction = do
     varName <- identifier
-    skipSymbol "="
+    symbol "="
     expr <- parserExpr
-    return $ Creature varName expr
+    return $ constrAction varName expr
 
-parserAssignment :: Parser Action
-parserAssignment = do
-    varName <- identifier
-    skipSymbol "="
-    expr <- parserExpr
-    return $ Assignment varName expr
+parserCreate :: Parser Action
+parserCreate = do
+    keyword "mut"
+    parserCreateOrAssign Create
+
+parserAssign :: Parser Action
+parserAssign = parserCreateOrAssign Assign
 
 parserRead :: Parser Action
 parserRead = do
-    skipSymbol ">"
+    symbol ">"
     varName <- identifier
     return $ Read varName
 
 parserWrite :: Parser Action
 parserWrite = do
-    skipSymbol "<"
+    symbol "<"
     expr <- parserExpr
     return $ Write expr
 
 parserFor :: Parser Action
 parserFor = do
     keyword "for"
-    skipSymbol  "("
+    symbol  "("
     varName <- identifier
     keyword "from"
     fromExpr <- parserExpr
     keyword "to"
     toExpr <- parserExpr
-    skipSymbol  ")"
-    skipSymbol  "{"
+    symbol  ")"
+    symbol  "{"
     actions <- parserProgram
-    skipSymbol  "}"
+    symbol  "}"
     return $ For varName fromExpr toExpr actions (getActionsLength actions)
   where
     getActionsLength :: [Action] -> Int
@@ -228,8 +228,8 @@ parserBreak = do
 
 parserAction :: Parser Action
 parserAction =
-    parserCreature
-    <|> parserAssignment
+    parserCreate
+    <|> parserAssign
     <|> parserRead
     <|> parserWrite
     <|> parserFor
@@ -275,13 +275,13 @@ varActionWithExcept name val mustBeMember constrError = do
     then throwError $ constrError name num
     else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
-creature :: InteprConstraintWithoutContIO m
+create :: InteprConstraintWithoutContIO m
     => C.ByteString -> Int -> m ()
-creature name val = varActionWithExcept name val False CreatureError
+create name val = varActionWithExcept name val False CreateError
 
-assignment :: InteprConstraintWithoutContIO m
+assign :: InteprConstraintWithoutContIO m
     => C.ByteString -> Int -> m ()
-assignment name val = varActionWithExcept name val True AssignmentError
+assign name val = varActionWithExcept name val True AssignError
 
 readVar :: InteprConstraintWithoutCont m
     => C.ByteString -> m ()
@@ -305,14 +305,14 @@ interpritationFor = callCC $ \exit -> do
     (m, num) <- get
     (actions, len, name, incExpr, toVal, actName) <- ask
     case M.lookup name m of
-        Nothing -> throwError $ AssignmentError name num
+        Nothing -> throwError $ AssignError name num
         Just counterVal ->
             if counterVal >= toVal
             then
                 modify $ \(curM, curNum) -> (curM, curNum + len + 1)
             else do
                 mapM_ (maybeInterpritation exit) actions
-                interpritationWithOneExpr incExpr (assignment name) actName
+                interpritationWithOneExpr incExpr (assign name) actName
                 modify $ \(curM, _) -> (curM, num)
                 interpritationFor
   where
@@ -331,12 +331,12 @@ interpritationWithOneExpr expr varAction actName = do
 
 interpritation :: InteprConstraint m
     => Action -> m ()
-interpritation (Creature name expr) = do
+interpritation (Create name expr) = do
     let actName = "creature \"" `C.append` name `C.append` "\""
-    interpritationWithOneExpr expr (creature name) actName
-interpritation (Assignment name expr) = do
+    interpritationWithOneExpr expr (create name) actName
+interpritation (Assign name expr) = do
     let actName = "assignment \"" `C.append` name `C.append` "\""
-    interpritationWithOneExpr expr (assignment name) actName
+    interpritationWithOneExpr expr (assign name) actName
 interpritation (Write expr) =
     interpritationWithOneExpr expr writeExpr "writing"
 interpritation (Read name) = readVar name
@@ -346,7 +346,7 @@ interpritation (For name fromExpr toExpr actions len) = do
     let exprEnv = (m, num, actName)
     fromVal <- runReaderT (eval fromExpr) exprEnv
     toVal <- runReaderT (eval toExpr) exprEnv
-    assignment name fromVal
+    assign name fromVal
     let incExpr = Add (Var name) (Lit 1)
     let forEnv = (actions, len, name, incExpr, toVal, actName)
     runReaderT interpritationFor forEnv
