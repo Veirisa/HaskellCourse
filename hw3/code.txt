@@ -9,6 +9,8 @@ for (i from 1 to (let z = y - x in z / 2)) {
     for (j from 0 to i + 4) {
         y = x * (let t = 10 in (i + j) * (i - j)) / 2
         j = j + 2
+        break
+        < 0
     }
     < y
 }

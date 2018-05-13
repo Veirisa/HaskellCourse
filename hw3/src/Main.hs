@@ -1,6 +1,7 @@
-{-# LANGUAGE ConstraintKinds  #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE InstanceSigs     #-}
+{-# LANGUAGE ConstraintKinds   #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE InstanceSigs      #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
@@ -15,17 +16,20 @@ import           Control.Monad.Trans.Except (runExceptT)
 import           Control.Monad.Trans.Reader (runReaderT)
 import           Control.Monad.Trans.State  (runStateT)
 
-import           Data.ByteString            (ByteString)
+import           Data.ByteString            (cons)
+import qualified Data.ByteString.Char8      as C (ByteString, append, pack,
+                                                  putStrLn, readFile)
+import           Data.Char                  (chr, isAlphaNum)
 import qualified Data.Map                   as M (Map, fromList, insert, lookup,
                                                   member)
 import           Data.Void                  (Void)
 
 import           Text.Megaparsec            (Parsec, between, empty, many,
-                                             notFollowedBy, runParser, try,
-                                             (<|>))
-import           Text.Megaparsec.Char       (alphaNumChar, letterChar, space1,
+                                             notFollowedBy, runParser,
+                                             takeWhileP, try, (<|>))
+import           Text.Megaparsec.Byte       (alphaNumChar, letterChar, space1,
                                              string)
-import qualified Text.Megaparsec.Char.Lexer as L (decimal, lexeme, space,
+import qualified Text.Megaparsec.Byte.Lexer as L (decimal, lexeme, space,
                                                   symbol)
 import           Text.Megaparsec.Error      (parseErrorPretty)
 import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
@@ -33,50 +37,68 @@ import           Text.Megaparsec.Expr       (Operator (InfixL), makeExprParser)
 -------------------------- DATA AND TYPES --------------------------
 
 data Expr = Lit Int
-          | Var String
+          | Var C.ByteString
           | Add Expr Expr
           | Sub Expr Expr
           | Mul Expr Expr
           | Div Expr Expr
-          | Let String Expr Expr
+          | Let C.ByteString Expr Expr
     deriving (Show, Eq)
 
-data Action = Creature String Expr
-            | Assignment String Expr
-            | Read String
+data Action = Creature C.ByteString Expr
+            | Assignment C.ByteString Expr
+            | Read C.ByteString
             | Write Expr
-            | For String Expr Expr [Action] Int
+            | For C.ByteString Expr Expr [Action] Int
             | Break
     deriving (Show, Eq)
 
-data InterprError = ExprDivByZeroError String Int
-                  | ExprNoVarError String String Int
-                  | CreatureError String Int
-                  | AssignmentError String Int
-                  | ReadError String Int
+data InterprError = ExprDivByZeroError C.ByteString Int
+                  | ExprNoVarError C.ByteString C.ByteString Int
+                  | CreatureError C.ByteString Int
+                  | AssignmentError C.ByteString Int
+                  | ReadError C.ByteString Int
 
-instance Show InterprError where
-    show :: InterprError -> String
-    show (ExprDivByZeroError actName num) =
-        "(" ++ show num  ++ "): The expression for " ++ actName ++
-        " contains division by 0"
-    show (ExprNoVarError failVarName actName num) =
-        "(" ++ show num  ++ "): The expression for " ++ actName ++
-        " can't be fully evaluated because variable \"" ++  failVarName ++
-        "\" doesn't exist"
-    show (CreatureError varName num) =
-        "(" ++ show num  ++ "): The variable \"" ++ varName ++
-        "\" can't be created because it already exists"
-    show (AssignmentError varName num) =
-        "(" ++ show num  ++ "): The variable \"" ++ varName ++
-        "\" can't be changed because it doesn't exist"
-    show (ReadError varName num) =
-        "(" ++ show num  ++ "): The variable \"" ++ varName ++
-        "\" can't be readed because it doesn't exist"
+class ShowBS a where
+    showBS :: a -> C.ByteString
+
+instance ShowBS Int where
+    showBS :: Int -> C.ByteString
+    showBS x = C.pack $ show x
+
+instance ShowBS InterprError where
+    showBS :: InterprError -> C.ByteString
+    showBS (ExprDivByZeroError actName num) =
+        "(" `C.append` showBS num
+        `C.append` "): The expression for "
+        `C.append` actName
+        `C.append` " contains division by 0"
+    showBS (ExprNoVarError failVarName actName num) =
+        "(" `C.append` showBS num
+        `C.append` "): The expression for "
+        `C.append` actName
+        `C.append` " can't be fully evaluated because variable \""
+        `C.append` failVarName
+        `C.append` "\" doesn't exist"
+    showBS (CreatureError varName num) =
+        "(" `C.append` showBS num
+        `C.append` "): The variable \""
+        `C.append` varName
+        `C.append` "\" can't be created because it already exists"
+    showBS (AssignmentError varName num) =
+        "(" `C.append` showBS num
+        `C.append` "): The variable \""
+        `C.append` varName
+        `C.append` "\" can't be changed because it doesn't exist"
+    showBS (ReadError varName num) =
+        "(" `C.append` showBS num
+        `C.append` "): The variable \""
+        `C.append` varName
+        `C.append` "\" can't be readed because it doesn't exist"
 
 type InteprConstraintWithoutContIO m =
     ( MonadError InterprError m
-    , MonadState (M.Map String Int, Int) m
+    , MonadState (M.Map C.ByteString Int, Int) m
     )
 
 type InteprConstraintWithoutCont m =
@@ -91,7 +113,7 @@ type InteprConstraint m =
 
 ----------------------------- PARSING ------------------------------
 
-type Parser = Parsec Void String
+type Parser = Parsec Void C.ByteString
 
 sc :: Parser ()
 sc = L.space space1 empty empty
@@ -99,7 +121,7 @@ sc = L.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-symbol :: String -> Parser String
+symbol :: C.ByteString -> Parser C.ByteString
 symbol = L.symbol sc
 
 parens :: Parser a -> Parser a
@@ -108,28 +130,29 @@ parens = between (symbol "(") (symbol ")")
 integer :: Parser Int
 integer = lexeme L.decimal
 
-rws :: [String]
-rws = ["let", "in", "mut", "for", "from", "to", "break"]
+keywordList :: [C.ByteString]
+keywordList = ["let", "in", "mut", "for", "from", "to", "break"]
 
-identifier :: Parser String
-identifier = (lexeme . try) (correctName >>= check)
+identifier :: Parser C.ByteString
+identifier = (lexeme . try) (name >>= isNotKeyword)
   where
-    correctName = (:) <$> letterChar <*> many alphaNumChar
-    check x =
-        if x `elem` rws
-        then fail $ "keyword " ++ show x ++ " can't be a variable name"
-        else return x
+    name =
+        cons <$> letterChar <*> takeWhileP Nothing (isAlphaNum . chr . fromIntegral)
+    isNotKeyword w =
+        if w `elem` keywordList
+        then fail $ "keyword " ++ show w ++ " can't be a variable name"
+        else return w
 
-rword :: String -> Parser ()
-rword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
+keyword :: C.ByteString -> Parser ()
+keyword w = (lexeme . try) (string w *> notFollowedBy alphaNumChar)
 
 parserLet :: Parser Expr
 parserLet = do
-    rword "let"
+    keyword "let"
     varName <- identifier
     symbol "="
     eqExpr <- parserExpr
-    rword "in"
+    keyword "in"
     inExpr <- parserExpr
     return $ Let varName eqExpr inExpr
 
@@ -151,7 +174,7 @@ exprTerm =
 
 parserCreature :: Parser Action
 parserCreature = do
-    rword "mut"
+    keyword "mut"
     varName <- identifier
     symbol "="
     expr <- parserExpr
@@ -178,12 +201,12 @@ parserWrite = do
 
 parserFor :: Parser Action
 parserFor = do
-    rword "for"
+    keyword "for"
     symbol "("
     varName <- identifier
-    rword "from"
+    keyword "from"
     fromExpr <- parserExpr
-    rword "to"
+    keyword "to"
     toExpr <- parserExpr
     symbol ")"
     symbol "{"
@@ -200,7 +223,7 @@ parserFor = do
 
 parserBreak :: Parser Action
 parserBreak = do
-    rword "break"
+    keyword "break"
     return Break
 
 parserAction :: Parser Action
@@ -218,7 +241,7 @@ parserProgram = many parserAction
 ---------------------------- FUNCTIONS -----------------------------
 
 eval :: ( MonadError InterprError m
-        , MonadReader (M.Map String Int, Int, String) m
+        , MonadReader (M.Map C.ByteString Int, Int, C.ByteString) m
         )
     => Expr -> m Int
 eval (Lit val) = return val
@@ -245,7 +268,7 @@ eval (Let v eqExpr inExpr) = do
     local changeMap (eval inExpr)
 
 varActionWithExcept :: InteprConstraintWithoutContIO m
-    => String -> Int -> Bool -> (String -> Int -> InterprError) -> m ()
+    => C.ByteString -> Int -> Bool -> (C.ByteString -> Int -> InterprError) -> m ()
 varActionWithExcept name val mustBeMember constrError = do
     (m, num) <- get
     if not (M.member name m == mustBeMember)
@@ -253,29 +276,29 @@ varActionWithExcept name val mustBeMember constrError = do
     else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
 creature :: InteprConstraintWithoutContIO m
-    => String -> Int -> m ()
+    => C.ByteString -> Int -> m ()
 creature name val = varActionWithExcept name val False CreatureError
 
 assignment :: InteprConstraintWithoutContIO m
-    => String -> Int -> m ()
+    => C.ByteString -> Int -> m ()
 assignment name val = varActionWithExcept name val True AssignmentError
 
 readVar :: InteprConstraintWithoutCont m
-    => String -> m ()
-readVar name= do
-    valStr <- liftIO $ getLine
+    => C.ByteString -> m ()
+readVar name = do
+    valStr <- liftIO getLine
     varActionWithExcept name (read valStr) True ReadError
 
 writeExpr :: InteprConstraintWithoutCont m
     => Int  -> m ()
 writeExpr val = do
-    liftIO $ putStrLn (show val)
+    liftIO $ C.putStrLn (showBS val)
     modify $ \(curM, curNum) -> (curM, curNum + 1)
 
 -------------------------- INTERPRITATION --------------------------
 
 interpritationFor :: ( InteprConstraint m
-                     , MonadReader ([Action], Int, String, Expr, Int, String) m
+                     , MonadReader ([Action], Int, C.ByteString, Expr, Int, C.ByteString) m
                      )
     => m ()
 interpritationFor = callCC $ \exit -> do
@@ -300,7 +323,7 @@ interpritationFor = callCC $ \exit -> do
         interpritation action
 
 interpritationWithOneExpr :: InteprConstraintWithoutCont m
-    => Expr -> (Int -> m ()) -> String -> m ()
+    => Expr -> (Int -> m ()) -> C.ByteString -> m ()
 interpritationWithOneExpr expr varAction actName = do
     (m, num) <- get
     val <- runReaderT (eval expr) (m, num, actName)
@@ -308,16 +331,18 @@ interpritationWithOneExpr expr varAction actName = do
 
 interpritation :: InteprConstraint m
     => Action -> m ()
-interpritation (Creature name expr) =
-    interpritationWithOneExpr expr (creature name) ("creature \"" ++ name ++ "\"")
-interpritation (Assignment name expr) =
-    interpritationWithOneExpr expr (assignment name) ("assignment \"" ++ name ++ "\"")
+interpritation (Creature name expr) = do
+    let actName = "creature \"" `C.append` name `C.append` "\""
+    interpritationWithOneExpr expr (creature name) actName
+interpritation (Assignment name expr) = do
+    let actName = "assignment \"" `C.append` name `C.append` "\""
+    interpritationWithOneExpr expr (assignment name) actName
 interpritation (Write expr) =
     interpritationWithOneExpr expr writeExpr "writing"
 interpritation (Read name) = readVar name
 interpritation (For name fromExpr toExpr actions len) = do
     (m, num) <- get
-    let actName = "assignment \"" ++ name ++ "\""
+    let actName = "assignment \"" `C.append` name `C.append` "\""
     let exprEnv = (m, num, actName)
     fromVal <- runReaderT (eval fromExpr) exprEnv
     toVal <- runReaderT (eval toExpr) exprEnv
@@ -336,7 +361,7 @@ fullInterpritation = mapM_ interpritation
 main :: IO ()
 main = do
     path <- getLine
-    code <- readFile path
+    code <- C.readFile path
     case runParser parserProgram "" code of
         Left parseErr -> putStr $ parseErrorPretty parseErr
         Right prog -> do
@@ -345,5 +370,5 @@ main = do
             let exit = return
             eitherInterpr <- runContT (runStateT (runExceptT interpr) state) exit
             case eitherInterpr of
-                (Left interprErr, newSt) -> putStrLn $ show interprErr
+                (Left interprErr, newSt) -> C.putStrLn $ showBS interprErr
                 (Right (), newSt)        -> return ()
