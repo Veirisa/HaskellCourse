@@ -5,8 +5,8 @@
 
 module Main where
 
-import           Control.Monad              (liftM2)
-import           Control.Monad.Cont         (MonadCont, callCC, runCont, when)
+import           Control.Monad              (liftM2, void)
+import           Control.Monad.Cont         (MonadCont, callCC, when)
 import           Control.Monad.Except       (MonadError, throwError)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Reader       (MonadReader, ask, local)
@@ -121,11 +121,11 @@ sc = L.space space1 empty empty
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
-symbol :: C.ByteString -> Parser C.ByteString
-symbol = L.symbol sc
+skipSymbol :: C.ByteString -> Parser ()
+skipSymbol = void . L.symbol sc
 
 parens :: Parser a -> Parser a
-parens = between (symbol "(") (symbol ")")
+parens = between (skipSymbol "(") (skipSymbol ")")
 
 integer :: Parser Int
 integer = lexeme $ L.signed (L.space empty empty empty) L.decimal
@@ -150,7 +150,7 @@ parserLet :: Parser Expr
 parserLet = do
     keyword "let"
     varName <- identifier
-    symbol "="
+    skipSymbol "="
     eqExpr <- parserExpr
     keyword "in"
     inExpr <- parserExpr
@@ -161,10 +161,10 @@ parserExpr = makeExprParser exprTerm exprOperators
 
 exprOperators :: [[Operator Parser Expr]]
 exprOperators =
-    [ [ InfixL (Mul <$ symbol "*")
-      , InfixL (Div <$ symbol "/") ]
-    , [ InfixL (Add <$ symbol "+")
-      , InfixL (Sub <$ symbol "-") ] ]
+    [ [ InfixL (Mul <$ skipSymbol "*")
+      , InfixL (Div <$ skipSymbol "/") ]
+    , [ InfixL (Add <$ skipSymbol "+")
+      , InfixL (Sub <$ skipSymbol "-") ] ]
 
 exprTerm :: Parser Expr
 exprTerm =
@@ -176,42 +176,42 @@ parserCreature :: Parser Action
 parserCreature = do
     keyword "mut"
     varName <- identifier
-    symbol "="
+    skipSymbol "="
     expr <- parserExpr
     return $ Creature varName expr
 
 parserAssignment :: Parser Action
 parserAssignment = do
     varName <- identifier
-    symbol "="
+    skipSymbol "="
     expr <- parserExpr
     return $ Assignment varName expr
 
 parserRead :: Parser Action
 parserRead = do
-    symbol ">"
+    skipSymbol ">"
     varName <- identifier
     return $ Read varName
 
 parserWrite :: Parser Action
 parserWrite = do
-    symbol "<"
+    skipSymbol "<"
     expr <- parserExpr
     return $ Write expr
 
 parserFor :: Parser Action
 parserFor = do
     keyword "for"
-    symbol "("
+    skipSymbol  "("
     varName <- identifier
     keyword "from"
     fromExpr <- parserExpr
     keyword "to"
     toExpr <- parserExpr
-    symbol ")"
-    symbol "{"
+    skipSymbol  ")"
+    skipSymbol  "{"
     actions <- parserProgram
-    symbol "}"
+    skipSymbol  "}"
     return $ For varName fromExpr toExpr actions (getActionsLength actions)
   where
     getActionsLength :: [Action] -> Int
@@ -257,21 +257,21 @@ eval (Div l r) = do
     rCalced <- eval r
     if rCalced == 0
     then do
-        (m, num, act) <- ask
+        (_, num, act) <- ask
         throwError $ ExprDivByZeroError act num
     else do
         lCalced <- eval l
         return $ div lCalced rCalced
 eval (Let v eqExpr inExpr) = do
     eqExprCalced <- eval eqExpr
-    let changeMap = \(curM, curNum, curAct) -> (M.insert v eqExprCalced curM, curNum, curAct)
-    local changeMap (eval inExpr)
+    let changeEnv (m', num', act') = (M.insert v eqExprCalced m', num', act')
+    local changeEnv (eval inExpr)
 
 varActionWithExcept :: InteprConstraintWithoutContIO m
     => C.ByteString -> Int -> Bool -> (C.ByteString -> Int -> InterprError) -> m ()
 varActionWithExcept name val mustBeMember constrError = do
     (m, num) <- get
-    if not (M.member name m == mustBeMember)
+    if M.member name m /= mustBeMember
     then throwError $ constrError name num
     else modify $ \(curM, curNum) -> (M.insert name val curM, curNum + 1)
 
@@ -313,7 +313,7 @@ interpritationFor = callCC $ \exit -> do
             else do
                 mapM_ (maybeInterpritation exit) actions
                 interpritationWithOneExpr incExpr (assignment name) actName
-                modify $ \(curM, curNum) -> (curM, num)
+                modify $ \(curM, _) -> (curM, num)
                 interpritationFor
   where
     maybeInterpritation :: InteprConstraint m
@@ -370,5 +370,5 @@ main = do
             let exit = return
             eitherInterpr <- runContT (runStateT (runExceptT interpr) state) exit
             case eitherInterpr of
-                (Left interprErr, newSt) -> C.putStrLn $ showBS interprErr
-                (Right (), newSt)        -> return ()
+                (Left interprErr, _) -> C.putStrLn $ showBS interprErr
+                (Right (), _)        -> return ()
