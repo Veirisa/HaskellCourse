@@ -1,0 +1,16 @@
+mut i = 0
+mut j = 0
+for (i from 1 to 3) {
+    mut x = i
+    < x
+    for (j from 3 to 5) {
+        mut y = x + j
+        < y
+    }
+    mut y = x
+    < y
+}
+mut x = 0
+< x
+mut y = 0
+< y
